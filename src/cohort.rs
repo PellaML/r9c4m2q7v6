@@ -81,6 +81,18 @@ pub fn generate() -> Cohort {
         b.sweep(magnitude);
         b.sweep(-magnitude);
     }
+    // Distinguish normalized-coordinate rounding from subnormal flushing.
+    // These are input probes, not assumed filtering expectations.
+    for bits in [
+        0x0000_0008, 0x0000_0100, 0x0001_0000, 0x0040_0000,
+        0x007f_ffff, 0x0080_0000, 0x0080_0001, 0x0d80_0000,
+        0x2180_0000, 0x2f80_0000, 0x3280_0000, 0x3300_0000,
+        0x3380_0000, 0x3400_0000, 0x3480_0000, 0x3580_0000,
+    ] {
+        let magnitude = f32::from_bits(bits);
+        b.sweep(magnitude);
+        b.sweep(-magnitude);
+    }
     let core_count = b.coordinates.len();
 
     // Exact k/512 coordinates plus both adjacent binary32 numbers at odd k.
