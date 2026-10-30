@@ -150,6 +150,9 @@ pub fn compile(root: &Path, out: &Path) -> io::Result<(Vec<Artifact>, Json)> {
             .current_dir(&source)
             .args(["--sdk", "macosx", "metal"])
             .args(FLAGS)
+            .arg(format!("-ffile-prefix-map={}=/probe", root.display()))
+            .arg(format!("-fdebug-prefix-map={}=/probe", root.display()))
+            .arg("-fdebug-compilation-dir=/probe/shaders")
             .arg("-c")
             .arg(format!("{name}.metal"))
             .arg("-o")
@@ -206,6 +209,7 @@ pub fn compile(root: &Path, out: &Path) -> io::Result<(Vec<Artifact>, Json)> {
                     "compile_flags",
                     Json::Array(FLAGS.iter().map(|v| Json::from(*v)).collect()),
                 ),
+                ("source_paths_remapped_to_public_probe_prefix", Json::from(true)),
                 ("compile", compiled.report),
                 ("link", link_report),
                 ("air", air_report),
