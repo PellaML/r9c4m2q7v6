@@ -1,4 +1,5 @@
 name: Probe
+run-name: Probe (${{ inputs.runner_label }})
 
 on:
   workflow_dispatch:
