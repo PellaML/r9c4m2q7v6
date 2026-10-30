@@ -35,9 +35,23 @@ pub struct Artifact {
 
 struct Privacy {
     paths: Vec<String>,
+    public_hosted_workspace: bool,
 }
 impl Privacy {
     fn new(root: &Path, out: &Path) -> Self {
+        let home = std::env::var("HOME").unwrap_or_default();
+        // Only the already-public checkout path of GitHub's standard macOS
+        // account is public metadata. Local user/build paths remain denied.
+        // No source/private inputs from another checkout enter this probe.
+        let public_hosted_workspace = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+            && std::env::var("RUNNER_ENVIRONMENT").as_deref() == Ok("github-hosted")
+            && public_workspace_paths(
+                root,
+                out,
+                &home,
+                &std::env::var("GITHUB_WORKSPACE").unwrap_or_default(),
+                &std::env::var("GITHUB_REPOSITORY").unwrap_or_default(),
+            );
         let mut paths = vec![
             root.to_string_lossy().into_owned(),
             out.to_string_lossy().into_owned(),
@@ -48,7 +62,10 @@ impl Privacy {
         paths.retain(|p| p.len() > 1);
         paths.sort_by_key(|p| std::cmp::Reverse(p.len()));
         paths.dedup();
-        Self { paths }
+        if public_hosted_workspace {
+            paths.clear();
+        }
+        Self { paths, public_hosted_workspace }
     }
     fn text(&self, text: &[u8]) -> String {
         let mut s = String::from_utf8_lossy(text).into_owned();
@@ -78,6 +95,14 @@ impl Privacy {
                 && !contains(bytes, &utf16_be)
         })
     }
+}
+fn public_workspace_paths(root: &Path, out: &Path, home: &str, workspace: &str, repository: &str) -> bool {
+    let Some((owner, name)) = repository.split_once('/') else { return false; };
+    if owner.is_empty() || name.is_empty() || name.contains('/') || home != "/Users/runner" {
+        return false;
+    }
+    let expected = Path::new("/Users/runner/work").join(name).join(name);
+    root == expected && Path::new(workspace) == expected && out.starts_with(&expected)
 }
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     !needle.is_empty() && haystack.windows(needle.len()).any(|slice| slice == needle)
@@ -209,7 +234,8 @@ pub fn compile(root: &Path, out: &Path) -> io::Result<(Vec<Artifact>, Json)> {
                     "compile_flags",
                     Json::Array(FLAGS.iter().map(|v| Json::from(*v)).collect()),
                 ),
-                ("source_paths_remapped_to_public_probe_prefix", Json::from(true)),
+                ("source_path_remapping_requested", Json::from(true)),
+                ("public_hosted_workspace_paths_allowed", Json::from(privacy.public_hosted_workspace)),
                 ("compile", compiled.report),
                 ("link", link_report),
                 ("air", air_report),
@@ -264,6 +290,7 @@ mod tests {
     fn path_audit_and_diagnostic_redaction_are_not_noops() {
         let privacy = Privacy {
             paths: vec!["/home/example/probe".into()],
+            public_hosted_workspace: false,
         };
         assert!(!privacy.safe_bytes(b"prefix /home/example/probe/source suffix"));
         let utf16: Vec<u8> = "/home/example/probe"
@@ -273,6 +300,15 @@ mod tests {
         assert!(!privacy.safe_bytes(&utf16));
         assert!(privacy.safe_bytes(b"read3d_level0_float.metal"));
         assert_eq!(privacy.text(b"/home/example/probe/source"), "/probe/source");
+    }
+    #[test]
+    fn only_exact_public_hosted_workspace_paths_are_allowed() {
+        let root = Path::new("/Users/runner/work/generic/generic");
+        assert!(public_workspace_paths(root, &root.join("out"), "/Users/runner", root.to_str().unwrap(), "owner/generic"));
+        assert!(!public_workspace_paths(root, &root.join("out"), "/Users/person", root.to_str().unwrap(), "owner/generic"));
+        assert!(!public_workspace_paths(root, Path::new("/Users/runner/private"), "/Users/runner", root.to_str().unwrap(), "owner/generic"));
+        assert!(!public_workspace_paths(root, &root.join("out"), "/Users/runner", root.to_str().unwrap(), "owner/different"));
+        assert!(!public_workspace_paths(Path::new("/Users/person/work/generic/generic"), &root.join("out"), "/Users/runner", root.to_str().unwrap(), "owner/generic"));
     }
     #[test]
     fn independent_runtime_artifacts_include_every_requested_signature_family() {
