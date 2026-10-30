@@ -1,0 +1,26 @@
+#include "interface.metalh"
+
+// Fragment entry points intentionally preserve legal implicit-LOD/bias contexts.
+// There is one mip only. No project sampling, address, rounding, or IR code is used.
+fragment float4 PROBE_ENTRY(
+    Raster raster [[stage_in]],
+    texture3d<PROBE_SCALAR, access::sample> texture [[texture(0)]],
+    sampler sample_state [[sampler(0)]],
+    device const Coordinate *coordinates [[buffer(0)]],
+    device Sample *output [[buffer(1)]],
+    constant Parameters &parameters [[buffer(2)]]) {
+    uint index = uint(raster.position.y) * parameters.width + uint(raster.position.x);
+    if (index >= parameters.count) return float4(0);
+    float3 c = probe_coordinate(coordinates, index);
+#if PROBE_OPERATION == 0
+    PROBE_VECTOR sampled = texture.sample(sample_state, c);
+#elif PROBE_OPERATION == 1
+    PROBE_VECTOR sampled = texture.sample(sample_state, c, bias(parameters.bias_value));
+#else
+    PROBE_VECTOR sampled = texture.sample(sample_state, c, level(0.0f));
+#endif
+    // Half results are promoted to binary32 for lossless, uniform raw recording.
+    float4 value = float4(sampled);
+    probe_store(output, index, parameters.token, value);
+    return value;
+}

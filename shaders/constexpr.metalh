@@ -1,0 +1,51 @@
+#include "interface.metalh"
+
+#if PROBE_PIXEL
+#define PROBE_COORD coord::pixel
+#else
+#define PROBE_COORD coord::normalized
+#endif
+
+#define PROBE_CASE(NUMBER, S, T, R, FILTER) \
+    case NUMBER: { \
+        constexpr sampler state(PROBE_COORD, s_address::S, t_address::T, r_address::R, \
+                                filter::FILTER, mip_filter::none); \
+        PROBE_VECTOR sampled = texture.sample(state, c, level(0.0f)); \
+        return float4(sampled); \
+    }
+
+inline float4 probe_constexpr_sample(texture3d<PROBE_SCALAR, access::sample> texture,
+                                    float3 c, uint selector) {
+    switch (selector) {
+        PROBE_CASE(0, clamp_to_edge, clamp_to_edge, clamp_to_edge, nearest)
+        PROBE_CASE(1, clamp_to_zero, clamp_to_edge, clamp_to_edge, nearest)
+        PROBE_CASE(2, clamp_to_edge, clamp_to_zero, clamp_to_edge, nearest)
+        PROBE_CASE(3, clamp_to_zero, clamp_to_zero, clamp_to_edge, nearest)
+        PROBE_CASE(4, clamp_to_edge, clamp_to_edge, clamp_to_zero, nearest)
+        PROBE_CASE(5, clamp_to_zero, clamp_to_edge, clamp_to_zero, nearest)
+        PROBE_CASE(6, clamp_to_edge, clamp_to_zero, clamp_to_zero, nearest)
+        PROBE_CASE(7, clamp_to_zero, clamp_to_zero, clamp_to_zero, nearest)
+        PROBE_CASE(8, clamp_to_edge, clamp_to_edge, clamp_to_edge, linear)
+        PROBE_CASE(9, clamp_to_zero, clamp_to_edge, clamp_to_edge, linear)
+        PROBE_CASE(10, clamp_to_edge, clamp_to_zero, clamp_to_edge, linear)
+        PROBE_CASE(11, clamp_to_zero, clamp_to_zero, clamp_to_edge, linear)
+        PROBE_CASE(12, clamp_to_edge, clamp_to_edge, clamp_to_zero, linear)
+        PROBE_CASE(13, clamp_to_zero, clamp_to_edge, clamp_to_zero, linear)
+        PROBE_CASE(14, clamp_to_edge, clamp_to_zero, clamp_to_zero, linear)
+        PROBE_CASE(15, clamp_to_zero, clamp_to_zero, clamp_to_zero, linear)
+        default: return float4(as_type<float>(0x7fc12345u));
+    }
+}
+
+fragment float4 PROBE_ENTRY(
+    Raster raster [[stage_in]],
+    texture3d<PROBE_SCALAR, access::sample> texture [[texture(0)]],
+    device const Coordinate *coordinates [[buffer(0)]],
+    device Sample *output [[buffer(1)]],
+    constant Parameters &parameters [[buffer(2)]]) {
+    uint index = uint(raster.position.y) * parameters.width + uint(raster.position.x);
+    if (index >= parameters.count) return float4(0);
+    float4 value = probe_constexpr_sample(texture, probe_coordinate(coordinates, index), parameters.sampler_index);
+    probe_store(output, index, parameters.token, value);
+    return value;
+}
