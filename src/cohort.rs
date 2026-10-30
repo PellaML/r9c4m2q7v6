@@ -93,6 +93,22 @@ pub fn generate() -> Cohort {
         b.sweep(magnitude);
         b.sweep(-magnitude);
     }
+    // Pixel cases consume only the core prefix. Include tie-side witnesses in
+    // that prefix too, rather than testing them solely in normalized cases.
+    for n in [-255, 1, 127, 257, 511, 767] {
+        let x = n as f32 / 512.0;
+        b.sweep(below(x));
+        b.sweep(above(x));
+    }
+    // Distinguish axis-sensitive rounding with nontrivial Y/Z permutations.
+    for triple in [
+        [-1, 129, 257], [-1, 257, 129],
+        [-1, 1, 385], [-1, 385, 1],
+        [129, -1, 257], [257, -1, 129],
+        [129, 257, -1], [257, 129, -1],
+    ] {
+        b.add(triple.map(|n| n as f32 / 512.0));
+    }
     let core_count = b.coordinates.len();
 
     // Exact k/512 coordinates plus both adjacent binary32 numbers at odd k.
@@ -137,7 +153,7 @@ mod tests {
             .iter()
             .flatten()
             .all(|v| f32::from_bits(*v).is_finite()));
-        assert!(a.core_count > 300 && a.core_count < 600);
+        assert!(a.core_count > 300 && a.core_count < 700);
         assert!(a.coordinates.len() > 11000 && a.coordinates.len() < 13000);
     }
     #[test]
@@ -166,5 +182,15 @@ mod tests {
         assert_eq!(above(-0.0).to_bits(), 1);
         assert_eq!(below(0.0).to_bits(), 0x8000_0001);
         assert_eq!(above(-0.5).to_bits(), (-0.5_f32).to_bits() - 1);
+    }
+
+    #[test]
+    fn pixel_cases_include_distinguishing_tie_inputs_in_their_prefix() {
+        let c = generate();
+        let core = &c.coordinates[..c.core_count];
+        assert!(core.contains(&[0xbeff_0001, 0x3f00_0000, 0x3f00_0000]));
+        assert!(core.contains(&[0xbb00_0000, 0x3e81_0000, 0x3f00_8000]));
+        assert!(core.contains(&[0xbb00_0000, 0x3f00_8000, 0x3e81_0000]));
+        println!("core_count={} coordinates={}", c.core_count, c.coordinates.len());
     }
 }
