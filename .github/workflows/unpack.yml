@@ -1,5 +1,5 @@
 name: Packed UNORM ALU probe
-run-name: Packed UNORM ALU (${{ inputs.runner_label }})
+run-name: Packed UNORM ALU (${{ inputs.runner_label }}, ${{ inputs.math_mode }})
 
 on:
   workflow_dispatch:
@@ -12,6 +12,14 @@ on:
         options:
           - macos-26
           - xcode-27
+      math_mode:
+        description: Compiler math permission
+        type: choice
+        required: true
+        default: strict
+        options:
+          - strict
+          - fast
 
 permissions:
   contents: read
@@ -27,7 +35,9 @@ jobs:
           fetch-depth: 1
       - name: Native ALU probe
         shell: bash
-        run: bash scripts/unpack/run.sh
+        env:
+          PROBE_MATH_MODE: ${{ inputs.math_mode }}
+        run: bash scripts/unpack/run.sh "$PROBE_MATH_MODE"
       - name: Observations
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

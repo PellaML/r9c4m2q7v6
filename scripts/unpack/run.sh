@@ -2,7 +2,9 @@
 set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$root"
-[[ $# -eq 0 ]] || { echo 'no arguments accepted' >&2; exit 64; }
+[[ $# -le 1 ]] || { echo 'one math mode only' >&2; exit 64; }
+mode="${1:-strict}"
+case "$mode" in strict) math=-fno-fast-math;; fast) math=-ffast-math;; *) echo 'unknown math mode' >&2; exit 64;; esac
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || { echo 'requires native Apple Silicon macOS' >&2; exit 2; }
 case "$(sw_vers -productVersion)" in 26.*|27.*) ;; *) echo 'requires macOS 26 or 27' >&2; exit 2;; esac
 unset MACOSX_DEPLOYMENT_TARGET SDKROOT
@@ -24,13 +26,13 @@ rustc --edition=2021 --check-cfg 'cfg(test)' --check-cfg 'cfg(unpack_native)' --
 cp shaders/unpack.metal "$work/unpack.metal"
 (
   cd "$work"
-  xcrun --sdk macosx metal -std=metal4.0 -O2 -g0 -fno-fast-math \
+  xcrun --sdk macosx metal -std=metal4.0 -O2 -g0 "$math" \
     -ffile-prefix-map="$root"=/probe -fdebug-prefix-map="$root"=/probe \
     -fdebug-compilation-dir=/probe -c unpack.metal -o unpack.air
   xcrun --sdk macosx metallib unpack.air -o unpack.metallib
 )
 set +e
-"$work/unpack-oracle" run "$work/unpack.metallib" "$work/results"
+"$work/unpack-oracle" run "$work/unpack.metallib" "$work/results" "$mode"
 status=$?
 set -e
 if [[ $status -ne 0 && $status -ne 1 ]]; then
@@ -52,7 +54,7 @@ cp "$work/unpack.air" "$work/unpack.metallib" "$work/results/"
   xcrun --sdk macosx --show-sdk-version
   xcrun --sdk macosx metal --version | sed '/^InstalledDir:/d'
   rustc --version --verbose
-  printf '%s\n' 'MSL: -std=metal4.0 -O2 -g0 -fno-fast-math; deployment: compiler default'
+  printf '%s\n' "MSL: -std=metal4.0 -O2 -g0 $math; deployment: compiler default"
 } > "$work/results/toolchain.txt"
 "$work/unpack-oracle" audit "$work/results"
 files=(inputs.bin expected-half.bin samples.bin native.json check.json wrong-expected.json manifest.json toolchain.txt unpack.air unpack.metallib)

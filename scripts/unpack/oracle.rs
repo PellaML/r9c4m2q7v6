@@ -223,7 +223,7 @@ unsafe extern "C" {
     ) -> i32;
 }
 #[cfg(unpack_native)]
-fn run(library: &Path, out: &Path) -> Result<i32> {
+fn run(library: &Path, out: &Path, fast: bool) -> Result<i32> {
     use std::ffi::CString;
     let library = CString::new(library.to_str().ok_or("library path encoding")?)
         .map_err(|_| "library path contains NUL")?;
@@ -267,15 +267,16 @@ fn run(library: &Path, out: &Path) -> Result<i32> {
     write(&out.join("manifest.json"), format!(concat!(
         "{{\"schema\":1,\"operation\":\"unpack_unorm4x8_to_half\",",
         "\"availability\":\"available_and_executed\",\"stage\":\"compute\",",
-        "\"standard\":\"metal4.0\",\"optimization\":\"-O2 -g0 -fno-fast-math\",",
+        "\"standard\":\"metal4.0\",\"optimization\":\"{}\",",
         "\"deployment\":\"compiler default\",\"cases\":1040,\"half_cells\":4160,",
         "\"sample_stride\":24,\"byte_order\":\"little endian\",",
         "\"expected\":\"exact rational byte/255, binary16 ties-to-even; low byte is lane0\",",
-        "\"numeric_passed\":{},\"air_signature_validation\":\"pending_raw_artifact_inspection\"}}\n"), status == 0))?;
+        "\"numeric_passed\":{},\"air_signature_validation\":\"pending_raw_artifact_inspection\"}}\n"),
+        if fast { "-O2 -g0 -ffast-math" } else { "-O2 -g0 -fno-fast-math" }, status == 0))?;
     Ok(status)
 }
 #[cfg(not(unpack_native))]
-fn run(_: &Path, _: &Path) -> Result<i32> {
+fn run(_: &Path, _: &Path, _: bool) -> Result<i32> {
     Err("native bridge not linked; no CPU fallback")
 }
 
@@ -349,12 +350,16 @@ fn audit(out: &Path) -> Result<i32> {
 fn main() {
     let args: Vec<_> = env::args_os().collect();
     let result = match args.get(1).and_then(|arg| arg.to_str()) {
-        Some("run") if args.len() == 4 => run(Path::new(&args[2]), Path::new(&args[3])),
+        Some("run") if args.len() == 5 => match args[4].to_str() {
+            Some("strict") => run(Path::new(&args[2]), Path::new(&args[3]), false),
+            Some("fast") => run(Path::new(&args[2]), Path::new(&args[3]), true),
+            _ => Err("math mode must be strict or fast"),
+        },
         Some("check") if args.len() == 3 => check_files(Path::new(&args[2]), false),
         Some("wrong-expected") if args.len() == 3 => check_files(Path::new(&args[2]), true),
         Some("audit") if args.len() == 3 => audit(Path::new(&args[2])),
         _ => {
-            Err("usage: unpack-oracle run LIB NEW_OUT | check OUT | wrong-expected OUT | audit OUT")
+            Err("usage: unpack-oracle run LIB NEW_OUT strict|fast | check OUT | wrong-expected OUT | audit OUT")
         }
     };
     let code = match result {
