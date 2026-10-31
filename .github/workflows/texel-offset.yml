@@ -1,0 +1,50 @@
+name: Constant texel offset probe
+run-name: Constant texel offset (two native images)
+
+on:
+  push:
+    branches: [research/offset304]
+    paths:
+      - .github/workflows/texel-offset.yml
+      - scripts/texel-offset/**
+      - shaders/texel-offset.metal
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, xcode-27]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Native single-mip sample readback
+        shell: bash
+        run: bash scripts/texel-offset/run.sh
+      - name: Raw observations and integrity controls
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: texel-offset-${{ matrix.runner }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            out-texel-offset/corpus.json
+            out-texel-offset/inputs.bin
+            out-texel-offset/image-data.bin
+            out-texel-offset/uploaded-images.bin
+            out-texel-offset/results.bin
+            out-texel-offset/native.json
+            out-texel-offset/check.json
+            out-texel-offset/wrong-expected.json
+            out-texel-offset/toolchain.txt
+            out-texel-offset/texel-offset.air
+            out-texel-offset/texel-offset.metallib
+            out-texel-offset/SHA256SUMS
