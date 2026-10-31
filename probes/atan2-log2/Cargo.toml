@@ -1,0 +1,13 @@
+[package]
+name = "atan2-log2-cohort"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[profile.release]
+debug = false
+strip = "symbols"
+panic = "abort"
+
+[dependencies]
