@@ -1,0 +1,55 @@
+name: Generic math cohort
+run-name: Generic math cohort (two native images, one head)
+
+on:
+  push:
+    branches: [research/math-cohort]
+    paths:
+      - .github/workflows/math-cohort.yml
+      - scripts/math-cohort/**
+      - shaders/math-cohort.metal
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            os_major: '26'
+          - runner: xcode-27
+            os_major: '27'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 8
+    env:
+      EXPECTED_OS_MAJOR: ${{ matrix.os_major }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Batched native math readback
+        shell: bash
+        run: bash scripts/math-cohort/run.sh
+      - name: Raw observations and exact controls
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: math-cohort-${{ matrix.runner }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            out-math-cohort/corpus.json
+            out-math-cohort/inputs.bin
+            out-math-cohort/uploaded-inputs.bin
+            out-math-cohort/results.bin
+            out-math-cohort/native.json
+            out-math-cohort/check.json
+            out-math-cohort/wrong-expected.json
+            out-math-cohort/toolchain.txt
+            out-math-cohort/math-cohort.air
+            out-math-cohort/math-cohort.metallib
+            out-math-cohort/SHA256SUMS
