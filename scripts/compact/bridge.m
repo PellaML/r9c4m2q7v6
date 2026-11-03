@@ -5,6 +5,50 @@
 #include <dlfcn.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
+#include <mach-o/loader.h>
+#include <CommonCrypto/CommonDigest.h>
+
+static NSString *hash_bytes(const void *bytes, size_t size) {
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    char hex[CC_SHA256_DIGEST_LENGTH * 2 + 1];
+    CC_SHA256(bytes,(CC_LONG)size,digest);
+    for (size_t i=0;i<sizeof(digest);i++) snprintf(hex+2*i,3,"%02x",digest[i]);
+    return @(hex);
+}
+
+static void image_identity(NSMutableDictionary *facts,const void *base) {
+    const struct mach_header_64 *header=base;
+    if (!header || header->magic!=MH_MAGIC_64 || header->sizeofcmds>65536 || header->ncmds>4096) return;
+    const uint8_t *at=(const uint8_t *)(header+1), *end=at+header->sizeofcmds;
+    for (uint32_t i=0;i<header->ncmds;i++) {
+        if ((size_t)(end-at)<sizeof(struct load_command)) return;
+        const struct load_command *load=(const struct load_command *)at;
+        if (load->cmdsize<sizeof(*load) || load->cmdsize>(size_t)(end-at)) return;
+        if (load->cmd==LC_UUID && load->cmdsize>=sizeof(struct uuid_command)) {
+            const struct uuid_command *uuid=(const struct uuid_command *)at;
+            facts[@"reader_image_uuid"]=[[[NSUUID alloc] initWithUUIDBytes:uuid->uuid] UUIDString];
+        }
+        if (load->cmd==LC_SEGMENT_64 && load->cmdsize>=sizeof(struct segment_command_64)) {
+            const struct segment_command_64 *segment=(const struct segment_command_64 *)at;
+            if (!strncmp(segment->segname,"__TEXT",16) && segment->filesize<=segment->vmsize && segment->filesize<=8*1024*1024) {
+                facts[@"reader_TEXT_bytes"]=@(segment->filesize);
+                facts[@"reader_TEXT_sha256"]=hash_bytes(base,(size_t)segment->filesize);
+                if (segment->nsects>(load->cmdsize-sizeof(*segment))/sizeof(struct section_64)) return;
+                const struct section_64 *section=(const struct section_64 *)(segment+1);
+                for (uint32_t j=0;j<segment->nsects;j++) {
+                    if (!strncmp(section[j].sectname,"__text",16) && section[j].addr>=segment->vmaddr &&
+                        section[j].size<=segment->filesize && section[j].addr-segment->vmaddr<=segment->filesize-section[j].size) {
+                        const uint8_t *code=(const uint8_t *)base+(section[j].addr-segment->vmaddr);
+                        facts[@"reader_text_bytes"]=@(section[j].size);
+                        facts[@"reader_text_sha256"]=hash_bytes(code,(size_t)section[j].size);
+                    }
+                }
+            }
+        }
+        at+=load->cmdsize;
+    }
+}
 
 @protocol CompactDevice
 - (MTLComputePipelineDescriptor *)newComputePipelineDescriptorWithSerializedData:(dispatch_data_t)data deserializationContext:(id)context;
@@ -39,6 +83,7 @@ int compact_probe(const uint8_t *bytes, size_t length, int64_t *rounding,
                 facts[@"reader_image"] = origin.dli_fname ? @(origin.dli_fname) : @"unknown";
                 facts[@"reader_symbol"] = origin.dli_sname ? @(origin.dli_sname) : @"unknown";
                 facts[@"reader_image_offset"] = @((uintptr_t)method_getImplementation(method) - (uintptr_t)origin.dli_fbase);
+                image_identity(facts,origin.dli_fbase);
             }
             if (!bytes || length == 0 || length > 64) { facts[@"status"] = @"input_bound"; goto done; }
             dispatch_data_t data = dispatch_data_create(bytes, length, dispatch_get_global_queue(QOS_CLASS_DEFAULT,0), DISPATCH_DATA_DESTRUCTOR_DEFAULT);
