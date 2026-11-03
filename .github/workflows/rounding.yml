@@ -1,0 +1,58 @@
+name: Generic texture write rounding
+run-name: Texture write rounding (${{ inputs.runner_label }}, ${{ inputs.collection }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: Standard free public-repository macOS runner only
+        type: choice
+        required: true
+        default: macos-26
+        options:
+          - macos-15
+          - macos-26
+          - xcode-27
+      collection:
+        description: inspect collects properties only; observe additionally requires actual GPU readback
+        type: choice
+        required: true
+        default: observe
+        options:
+          - observe
+          - inspect
+
+permissions:
+  contents: read
+
+jobs:
+  rounding:
+    # The expression clamps even a non-UI input to this standard-label allowlist.
+    # No paid size suffix and no self-hosted runner are accepted.
+    runs-on: ${{ inputs.runner_label == 'macos-15' && 'macos-15' || inputs.runner_label == 'xcode-27' && 'xcode-27' || 'macos-26' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # same pin as existing public scaffold
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Collect
+        shell: bash
+        env:
+          COLLECTION: ${{ inputs.collection }}
+        run: bash scripts/rounding/run.sh "$COLLECTION" out-rounding
+      - name: Retain bounded generic observations even if GPU is absent
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # same pin as existing public scaffold
+        with:
+          name: rounding-${{ inputs.runner_label }}-${{ inputs.collection }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            out-rounding/identity.txt
+            out-rounding/build-options.txt
+            out-rounding/SOURCE_SHA256SUMS
+            out-rounding/SHA256SUMS
+            out-rounding/reference-tests.txt
+            out-rounding/results/*.json
+            out-rounding/results/*.bin
