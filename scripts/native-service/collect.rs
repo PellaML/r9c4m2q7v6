@@ -5,17 +5,37 @@ fn run(command: &mut Command) -> io::Result<()> {
     else { Err(io::Error::other("native evidence command failed")) }
 }
 
+fn locate(root: &Path, depth: usize, visited: &mut usize, matches: &mut Vec<std::path::PathBuf>) -> io::Result<()> {
+    if depth > 20 || *visited > 500_000 { return Err(io::Error::other("system search bound exceeded")); }
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied || error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        let entry = entry?;
+        *visited += 1;
+        let kind = entry.file_type()?;
+        if kind.is_dir() { locate(&entry.path(), depth + 1, visited, matches)?; }
+        else if kind.is_file() && entry.file_name() == "GPUTask" { matches.push(entry.path()); }
+        // Never follow filesystem symlinks or inspect account/user directories.
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let out = Path::new("out-native-service");
     fs::create_dir(out)?;
-    // Fixed public system-service paths only: no project, account or user files.
-    let roots = ["/System/Library/Frameworks", "/System/Library/PrivateFrameworks"];
-    let mut selected = None;
-    for root in roots {
-        let path = Path::new(root).join("ParavirtualizedGraphics.framework/Versions/A/XPCServices/GPUTask.xpc/Contents/MacOS/GPUTask");
-        if path.is_file() { selected = Some(path); break; }
+    // Locate one fixed executable name in public system roots, not user storage.
+    let mut selected = Vec::new();
+    let mut visited = 0;
+    for root in ["/System/Library", "/usr/libexec"] {
+        locate(Path::new(root), 0, &mut visited, &mut selected)?;
     }
-    let input = selected.ok_or_else(|| io::Error::other("fixed native service unavailable"))?;
+    println!("system_entries_visited={visited}; candidates={}", selected.len());
+    for path in &selected { println!("system_service_path={}", path.display()); }
+    if selected.len() != 1 { return Err(io::Error::other("native service missing or ambiguous")); }
+    let input = selected.remove(0);
     let length = fs::metadata(&input)?.len();
     if !(1..=8 * 1024 * 1024).contains(&length) {
         return Err(io::Error::other("native service size outside bound"));
