@@ -17,7 +17,16 @@ fn locate(root: &Path, depth: usize, visited: &mut usize, matches: &mut Vec<std:
         *visited += 1;
         let kind = entry.file_type()?;
         if kind.is_dir() { locate(&entry.path(), depth + 1, visited, matches)?; }
-        else if kind.is_file() && entry.file_name() == "GPUTask" { matches.push(entry.path()); }
+        else if kind.is_file() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if name.contains("gputask") { matches.push(path.clone()); }
+            let text = path.to_string_lossy();
+            if text.contains("ParavirtualizedGraphics.framework/") ||
+               (text.contains("Virtualization.framework/") && text.contains("XPCServices/")) {
+                println!("system_graphics_file={}", path.display());
+            }
+        }
         // Never follow filesystem symlinks or inspect account/user directories.
     }
     Ok(())
