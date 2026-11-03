@@ -1,0 +1,38 @@
+name: Native compact properties
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  collect:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [xcode-27, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Collect
+        shell: bash
+        run: |
+          sw_vers > compact-identity.txt
+          uname -m >> compact-identity.txt
+          shasum -a 256 scripts/compact/* .github/workflows/compact.yml > compact-source-sha256.txt
+          xcrun clang -c scripts/compact/bridge.m -fobjc-arc -std=c11 -O2 -Wall -Wextra -Werror -o /tmp/compact-bridge.o
+          rustc --edition=2021 -D warnings -O scripts/compact/host.rs -C link-arg=/tmp/compact-bridge.o -l framework=Foundation -l framework=Metal -l objc -o /tmp/compact-probe
+          /tmp/compact-probe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: compact-${{ matrix.runner }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            compact-identity.txt
+            compact-source-sha256.txt
+            out-compact/*.json
+            out-compact/*.bin
