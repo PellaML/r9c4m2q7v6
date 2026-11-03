@@ -1,0 +1,28 @@
+name: Native service evidence
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  collect:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Collect fixed native service
+        shell: bash
+        run: |
+          rustc --edition=2021 -D warnings scripts/native-service/collect.rs -o /tmp/collect-native-service
+          /tmp/collect-native-service > native-service-identity.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-service
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            native-service-identity.txt
+            out-native-service/service.cms
