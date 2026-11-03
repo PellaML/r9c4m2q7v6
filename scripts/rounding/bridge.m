@@ -7,12 +7,12 @@
 // Private selector surface only. Deliberately no guessed MTLRoundingMode enum.
 // The runtime ABI is checked before either scalar method is called.
 @interface MTLComputePipelineDescriptor (GenericRoundingProbe)
-- (NSUInteger)textureWriteRoundingMode;
-- (void)setTextureWriteRoundingMode:(NSUInteger)mode;
+- (NSInteger)textureWriteRoundingMode;
+- (void)setTextureWriteRoundingMode:(NSInteger)mode;
 @end
 
 @protocol GenericRoundingSupport
-- (BOOL)supportsTextureWriteRoundingMode:(NSUInteger)mode;
+- (BOOL)supportsTextureWriteRoundingMode:(NSInteger)mode;
 @end
 
 static NSString *description(id object) {
@@ -36,8 +36,10 @@ static int finish(NSMutableDictionary *m, NSString *status, NSError *error,
     return code;
 }
 
-static BOOL unsignedInteger(const char *type) {
-    return type && strcmp(type, @encode(NSUInteger)) == 0;
+static BOOL signedInteger(const char *type) {
+    // Observed getter q16@0:8, setter v24@0:8q16 and capability B24@0:8q16.
+    // Preserve the runtime check; do not accept a merely same-width enum ABI.
+    return type && strcmp(type, @encode(NSInteger)) == 0;
 }
 
 static id<MTLDevice> inventory(NSMutableDictionary *m) {
@@ -95,10 +97,10 @@ int rounding_native(uint32_t stage, uint32_t mode, uint32_t format, uint32_t fas
                 Method method = class_getInstanceMethod([(NSObject *)device class], selector);
                 m[@"capability_encoding"] = method ? @(method_getTypeEncoding(method)) : @"missing";
                 if (!sig || sig.numberOfArguments != 3 || strcmp(sig.methodReturnType, @encode(BOOL)) ||
-                    !unsignedInteger([sig getArgumentTypeAtIndex:2]))
-                    return finish(m, @"capability_abi_not_bool_nsuinteger", nil, 21, json, capacity);
+                    !signedInteger([sig getArgumentTypeAtIndex:2]))
+                    return finish(m, @"capability_abi_not_bool_nsinteger", nil, 21, json, capacity);
                 m[@"supportsTextureWriteRoundingMode"] = @([(id<GenericRoundingSupport>)device
-                    supportsTextureWriteRoundingMode:(NSUInteger)mode]);
+                    supportsTextureWriteRoundingMode:(NSInteger)mode]);
                 // This property is descriptive only; it neither proves execution nor gates
                 // the independently attempted compute pipeline/writeback cases.
                 return finish(m, @"capability_only_not_gpu_proof", nil, 0, json, capacity);
@@ -124,12 +126,12 @@ int rounding_native(uint32_t stage, uint32_t mode, uint32_t format, uint32_t fas
             m[@"getter_encoding"] = getMethod ? @(method_getTypeEncoding(getMethod)) : @"missing";
             m[@"setter_encoding"] = setMethod ? @(method_getTypeEncoding(setMethod)) : @"missing";
             if (!getSig || !setSig || getSig.numberOfArguments != 2 || setSig.numberOfArguments != 3 ||
-                !unsignedInteger(getSig.methodReturnType) || strcmp(setSig.methodReturnType, "v") ||
-                !unsignedInteger([setSig getArgumentTypeAtIndex:2]))
-                return finish(m, @"selector_abi_not_nsuinteger", nil, 21, json, capacity);
+                !signedInteger(getSig.methodReturnType) || strcmp(setSig.methodReturnType, "v") ||
+                !signedInteger([setSig getArgumentTypeAtIndex:2]))
+                return finish(m, @"selector_abi_not_nsinteger", nil, 21, json, capacity);
             m[@"getter_default"] = @([descriptor textureWriteRoundingMode]);
-            [descriptor setTextureWriteRoundingMode:(NSUInteger)mode];
-            NSUInteger observed = [descriptor textureWriteRoundingMode];
+            [descriptor setTextureWriteRoundingMode:(NSInteger)mode];
+            NSInteger observed = [descriptor textureWriteRoundingMode];
             m[@"getter_after_set"] = @(observed);
             m[@"description_after_set"] = description(descriptor);
             m[@"round_trip_equal"] = @(observed == mode);
