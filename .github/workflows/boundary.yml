@@ -1,0 +1,70 @@
+name: Generic half conversion boundary observation
+run-name: Half boundary observation (${{ inputs.runner_label }})
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: Existing standard public-repository labels only
+        type: choice
+        required: true
+        default: macos-26
+        options:
+          - macos-26
+          - xcode-27
+permissions:
+  contents: read
+concurrency:
+  group: generic-boundary-observation-${{ inputs.runner_label }}
+  cancel-in-progress: false
+jobs:
+  boundary:
+    runs-on: ${{ inputs.runner_label == 'xcode-27' && 'xcode-27' || 'macos-26' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Observe and retain failures
+        shell: bash
+        run: bash scripts/boundary/run.sh out-boundary
+      - name: Enforce artifact budget
+        if: always()
+        id: bounds
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(out-boundary/command-exit.json out-boundary/run-receipt.json out-boundary/reference-tests.txt
+            out-boundary/results/*.json out-boundary/results/*.bin out-boundary/results/*.txt out-boundary/results/*.csv
+            out-boundary/reference-negative/*.json out-boundary/reference-negative/*.bin
+            out-boundary/reference/*.json out-boundary/reference/*.bin)
+          total=0
+          count=0
+          for file in "${files[@]}"; do
+            [[ -f "$file" && ! -L "$file" ]] || exit 1
+            size=$(wc -c < "$file")
+            (( size <= 1048576 )) || exit 1
+            total=$((total + size))
+            count=$((count + 1))
+          done
+          (( count <= 384 && total <= 16777216 )) || exit 1
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Retain bounded generic observations
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: boundary-${{ inputs.runner_label }}
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            out-boundary/command-exit.json
+            out-boundary/run-receipt.json
+            out-boundary/reference-tests.txt
+            out-boundary/results/*.json
+            out-boundary/results/*.bin
+            out-boundary/results/*.txt
+            out-boundary/results/*.csv
+            out-boundary/reference-negative/*.json
+            out-boundary/reference-negative/*.bin
+            out-boundary/reference/*.json
+            out-boundary/reference/*.bin
