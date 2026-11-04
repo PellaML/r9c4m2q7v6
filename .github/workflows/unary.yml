@@ -1,0 +1,77 @@
+name: Generic native GPU unary observation
+run-name: Unary observation (${{ inputs.runner_label }})
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: Existing standard free public-repository labels only
+        type: choice
+        required: true
+        default: macos-26
+        options:
+          - macos-26
+          - xcode-27
+permissions:
+  contents: read
+concurrency:
+  group: generic-unary-observation
+  cancel-in-progress: false
+jobs:
+  unary:
+    # Clamp non-UI inputs too: no paid size suffix, matrix, or self-hosted runner.
+    runs-on: ${{ inputs.runner_label == 'xcode-27' && 'xcode-27' || 'macos-26' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Observe and retain failures
+        shell: bash
+        run: bash scripts/unary/run.sh out-unary
+      - name: Enforce artifact budget even on failure
+        if: always()
+        id: bounds
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(out-unary/command-exit.json out-unary/run-receipt.json out-unary/reference-tests.txt
+            out-unary/results/*.json out-unary/results/*.bin out-unary/results/*.txt
+            out-unary/reference/*.json out-unary/reference/*.bin
+            out-unary/reference-negative-*/*.json out-unary/reference-negative-*/*.bin
+            out-unary/air/*.compile.json out-unary/air/*.signatures.txt
+            out-unary/air/*.air out-unary/air/*.ll)
+          total=0
+          count=0
+          for file in "${files[@]}"; do
+            [[ -e "$file" ]] || continue
+            [[ -f "$file" && ! -L "$file" ]] || exit 1
+            size=$(wc -c < "$file")
+            (( size <= 4194304 )) || exit 1
+            total=$((total + size))
+            count=$((count + 1))
+          done
+          (( count <= 128 && total <= 33554432 )) || exit 1
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Retain bounded generic observations
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: unary-${{ inputs.runner_label }}
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            out-unary/command-exit.json
+            out-unary/run-receipt.json
+            out-unary/reference-tests.txt
+            out-unary/results/*.json
+            out-unary/results/*.bin
+            out-unary/results/*.txt
+            out-unary/reference/*.json
+            out-unary/reference/*.bin
+            out-unary/reference-negative-*/*.json
+            out-unary/reference-negative-*/*.bin
+            out-unary/air/*.compile.json
+            out-unary/air/*.signatures.txt
+            out-unary/air/*.air
+            out-unary/air/*.ll
