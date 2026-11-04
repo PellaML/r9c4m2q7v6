@@ -64,6 +64,27 @@ static const MTLBlendFactor kBlendDst[4] = {
     MTLBlendFactorOne, MTLBlendFactorDestinationAlpha,
 };
 
+static BOOL observe_stencil_defaults(MTLStencilDescriptor *s,
+        NSMutableDictionary *records, NSString *key) {
+    if (!s) {
+        records[key] = @{ @"nil": @YES };
+        return YES;
+    }
+    records[key] = @{
+        @"nil": @NO, @"compare": @(s.stencilCompareFunction),
+        @"stencil_failure": @(s.stencilFailureOperation),
+        @"depth_failure": @(s.depthFailureOperation),
+        @"pass": @(s.depthStencilPassOperation),
+        @"read_mask": @(s.readMask), @"write_mask": @(s.writeMask)
+    };
+    // A default descriptor may expose real front/back objects. Observe them;
+    // pointer absence is not the semantic contract. This object is never bound.
+    return s.stencilCompareFunction == MTLCompareFunctionAlways &&
+        s.stencilFailureOperation == MTLStencilOperationKeep &&
+        s.depthFailureOperation == MTLStencilOperationKeep &&
+        s.depthStencilPassOperation == MTLStencilOperationKeep;
+}
+
 static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device, id<MTLFunction> v,
         id<MTLFunction> f, MTLColorWriteMask mask, BOOL blend, int config, NSError **error) {
     MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
@@ -219,8 +240,10 @@ int rg16_native(uint32_t scenario, uint32_t variant, const char *source,
                     @"front_stencil_nil": @(defaults.frontFaceStencil == nil),
                     @"back_stencil_nil": @(defaults.backFaceStencil == nil)
                 };
+                BOOL front_inert = observe_stencil_defaults(defaults.frontFaceStencil, m, @"unbound_front_stencil");
+                BOOL back_inert = observe_stencil_defaults(defaults.backFaceStencil, m, @"unbound_back_stencil");
                 if (defaults.depthCompareFunction != MTLCompareFunctionAlways || defaults.depthWriteEnabled ||
-                    defaults.frontFaceStencil != nil || defaults.backFaceStencil != nil)
+                    !front_inert || !back_inert)
                     return finish(m, @"unexpected_api_defaults", nil, 25, json, capacity);
             }
             m[@"test_pipelines"] = test_desc;

@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: generic-rg16-observation
+  group: generic-rg16-observation-${{ inputs.runner_label }}
   cancel-in-progress: false
 jobs:
   rg16:
