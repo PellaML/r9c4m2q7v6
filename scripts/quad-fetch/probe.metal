@@ -64,7 +64,7 @@ fragment Colors fetch_only(INPUTS) {
 }
 fragment Colors fetch_independent(INPUTS) {
     float4 pd,vd;independent(r,pd,vd);
-    half4 color=half4(float2(prior)+float2(pd.x,pd.w),vd.x,vd.z);
+    half4 color=half4(float4(float2(prior)+float2(pd.x,pd.w),vd.x,vd.z));
     return record(r,prior,pd,vd,float4(0),ushort2(0),ushort2(0),color,traces,p);
 }
 fragment Colors fetch_half_derivative(INPUTS) {
