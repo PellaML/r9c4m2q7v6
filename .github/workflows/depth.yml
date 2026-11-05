@@ -1,0 +1,186 @@
+name: Generic native position depth
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Existing runner label for this single bounded job
+        required: true
+        type: choice
+        default: macos-26
+        options:
+          - macos-26
+          - xcode-27
+
+permissions:
+  contents: read
+
+jobs:
+  depth:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out only this generic probe
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/depth/host.rs
+            /scripts/depth/bridge.m
+            /scripts/depth/probe.metal
+            /.github/workflows/depth.yml
+
+      - name: Bounded build, portable checks, and native observation
+        shell: bash
+        env:
+          DEPTH_RUNNER_LABEL: ${{ inputs.runner }}
+        run: |
+          set -euo pipefail
+          root="$(pwd -P)"
+          out="$root/out-depth"
+          [[ ! -e "$out" && ! -L "$out" ]] || exit 64
+          mkdir -p "$out/build" "$out/logs" "$out/evidence"
+          build="$out/build"
+          phase=setup
+
+          finish() {
+            status=$?
+            trap - EXIT
+            set +e
+            printf '{"schema":1,"phase":"%s","command_exit_code":%s}\n' \
+              "$phase" "$status" > "$out/logs/command-exit.json"
+            if [[ "$status" != 0 ]]; then
+              for log in "$out"/logs/*.log; do
+                [[ -f "$log" ]] || continue
+                printf '\n--- %s ---\n' "$(basename "$log")" >&2
+                tail -n 100 "$log" >&2
+              done
+            fi
+            (
+              cd "$root" || exit 1
+              shasum -a 256 scripts/depth/host.rs scripts/depth/bridge.m \
+                scripts/depth/probe.metal .github/workflows/depth.yml
+            ) > "$out/evidence/source-sha256.txt"
+            source_status=$?
+            (
+              set -euo pipefail
+              cd "$out"
+              find evidence logs -type f -print | LC_ALL=C sort |
+                while IFS= read -r file; do shasum -a 256 "$file"; done
+            ) > "$build/manifest.tmp"
+            manifest_status=$?
+            if [[ "$source_status" == 0 && "$manifest_status" == 0 ]] &&
+                mv "$build/manifest.tmp" "$out/evidence/SHA256SUMS"; then
+              :
+            else
+              printf 'Hash sealing failed; this run is not qualified.\n' > "$out/logs/seal-failure.txt"
+              status=1
+            fi
+            exit "$status"
+          }
+          trap finish EXIT
+          run_logged() {
+            local name="$1"
+            shift
+            local code=0
+            "$@" > "$out/logs/$name.log" 2>&1 || code=$?
+            cat "$out/logs/$name.log"
+            return "$code"
+          }
+
+          supported_environment() {
+            local label="$1" os_version="$2" xcode_version="$3"
+            case "$label:$os_version" in
+              macos-26:26.*|xcode-27:26.*|xcode-27:27.*) ;;
+              *) return 1 ;;
+            esac
+            case "$label" in
+              macos-26) [[ "$xcode_version" =~ ^Xcode\ (26|27)(\.[0-9]+)*$ ]] ;;
+              xcode-27) [[ "$xcode_version" =~ ^Xcode\ 27(\.[0-9]+)*$ ]] ;;
+              *) return 1 ;;
+            esac
+          }
+          phase=environment
+          {
+            uname -s
+            uname -m
+            sw_vers
+            git rev-parse HEAD
+            printf 'runner_label=%s\n' "$DEPTH_RUNNER_LABEL"
+            printf 'runner=%s\n' "${RUNNER_NAME:-unknown}"
+          } > "$out/logs/environment.log" 2>&1
+          [[ "$(uname -s)" == Darwin ]] || {
+            echo 'Required: native Darwin; no runner fallback.' >> "$out/logs/environment.log"
+            exit 23
+          }
+          # Keep the selected runner's active toolchain. Reading xcode-select -p
+          # does not switch/install Xcode or manufacture a different runner.
+          phase=active_toolchain
+          if [[ -n "${DEVELOPER_DIR:-}" ]]; then
+            selected="$DEVELOPER_DIR"
+          else
+            selected="$(/usr/bin/xcode-select -p 2>> "$out/logs/environment.log")"
+          fi
+          export DEVELOPER_DIR="$selected"
+          version="$(/usr/bin/xcodebuild -version 2>> "$out/logs/environment.log")"
+          printf 'developer_dir=%s\n%s\n' "$selected" "$version" >> "$out/logs/environment.log"
+          xcode_version="$(printf '%s\n' "$version" | head -n 1)"
+          os_version="$(sw_vers -productVersion)"
+          supported_environment "$DEPTH_RUNNER_LABEL" "$os_version" "$xcode_version" || {
+            echo 'Runner/OS/active-Xcode combination is outside the bounded allowlist.' >> "$out/logs/environment.log"
+            exit 23
+          }
+          export MACOSX_DEPLOYMENT_TARGET=26.0
+          unset SDKROOT
+          xcrun --sdk macosx --show-sdk-version >> "$out/logs/environment.log" 2>&1
+          xcrun --sdk macosx clang --version >> "$out/logs/environment.log" 2>&1
+          cat "$out/logs/environment.log"
+
+          phase=rust_toolchain
+          run_logged rust-toolchain rustup toolchain install 1.98.1 --profile minimal --no-self-update
+          run_logged rust-version rustup run 1.98.1 rustc --version --verbose
+          phase=portable_build
+          run_logged portable-build rustup run 1.98.1 rustc --edition=2021 \
+            --check-cfg 'cfg(test)' --check-cfg 'cfg(depth_native)' -D warnings -O -C overflow-checks=on \
+            --remap-path-prefix "$root=/probe" scripts/depth/host.rs -o "$build/portable"
+          phase=test_build
+          run_logged test-build rustup run 1.98.1 rustc --edition=2021 --test \
+            --check-cfg 'cfg(test)' --check-cfg 'cfg(depth_native)' -D warnings -O -C overflow-checks=on \
+            --remap-path-prefix "$root=/probe" scripts/depth/host.rs -o "$build/tests"
+          phase=portable_tests
+          run_logged portable-tests "$build/tests" --test-threads=1
+          phase=portable_reference
+          run_logged portable-reference "$build/portable" reference "$out/evidence/portable-reference"
+          phase=portable_native_gate
+          gate=0
+          "$build/portable" observe "$out/evidence/must-not-exist" > "$out/logs/native-gate.log" 2>&1 || gate=$?
+          [[ "$gate" == 2 && ! -e "$out/evidence/must-not-exist" ]]
+          grep -q 'no CPU-as-GPU fallback' "$out/logs/native-gate.log"
+
+          phase=bridge_build
+          run_logged bridge-build xcrun --sdk macosx clang -c scripts/depth/bridge.m \
+            -fobjc-arc -fblocks -std=c11 -O2 -g0 -Wall -Wextra -Werror \
+            -Wno-deprecated-declarations -mmacosx-version-min=26.0 \
+            -ffile-prefix-map="$root"=/probe -fdebug-prefix-map="$root"=/probe \
+            -o "$build/bridge.o"
+          phase=native_host_build
+          run_logged native-build rustup run 1.98.1 rustc --edition=2021 --cfg depth_native \
+            --check-cfg 'cfg(test)' --check-cfg 'cfg(depth_native)' -D warnings -O -C overflow-checks=on -C debuginfo=0 \
+            --remap-path-prefix "$root=/probe" scripts/depth/host.rs \
+            -C "link-arg=$build/bridge.o" -l framework=Foundation -l framework=Metal \
+            -l objc -o "$build/depth-probe"
+          phase=native_observe
+          run_logged native-observe "$build/depth-probe" observe "$out/evidence/native"
+          phase=complete
+
+      - name: Retain logs and sealed evidence, including failed observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: position-depth-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            out-depth/logs/
+            out-depth/evidence/
+          if-no-files-found: error
+          retention-days: 7
