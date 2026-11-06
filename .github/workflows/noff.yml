@@ -1,0 +1,54 @@
+name: Generic integer offset observation
+run-name: integer offset observation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: generic-noff-observation
+  cancel-in-progress: false
+jobs:
+  noff:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'PellaML/r9c4m2q7v6' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [macos-26, xcode-27]
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Observe
+        shell: bash
+        run: bash scripts/noff/run.sh out-noff
+      - name: Enforce artifact budget
+        if: always()
+        id: bounds
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(out-noff/command-exit.json out-noff/run-receipt.json out-noff/results/*.json out-noff/results/*.bin out-noff/results/*.txt)
+          total=0; count=0
+          for file in "${files[@]}"; do
+            [[ -f "$file" && ! -L "$file" ]] || exit 1
+            size=$(wc -c < "$file"); (( size <= 8388608 )) || exit 1
+            total=$((total + size)); count=$((count + 1))
+          done
+          (( count <= 40 && total <= 50331648 )) || exit 1
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Retain
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: noff-${{ matrix.label }}
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            out-noff/command-exit.json
+            out-noff/run-receipt.json
+            out-noff/results/*.json
+            out-noff/results/*.bin
+            out-noff/results/*.txt
