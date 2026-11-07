@@ -1,0 +1,54 @@
+name: Generic attachment helper edge observation
+run-name: Attachment helper edge observation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: generic-fetch-clear-observation
+  cancel-in-progress: false
+jobs:
+  fetch-clear:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'PellaML/r9c4m2q7v6' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [macos-26, xcode-27]
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Observe
+        shell: bash
+        run: bash scripts/fetch-edge/clear.sh out-fetch-clear
+      - name: Enforce artifact budget
+        if: always()
+        id: bounds
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(out-fetch-clear/command-exit.json out-fetch-clear/run-receipt.json out-fetch-clear/results/*.json out-fetch-clear/results/*.bin out-fetch-clear/results/*.txt)
+          total=0; count=0
+          for file in "${files[@]}"; do
+            [[ -f "$file" && ! -L "$file" ]] || exit 1
+            size=$(wc -c < "$file"); (( size <= 4194304 )) || exit 1
+            total=$((total + size)); count=$((count + 1))
+          done
+          (( count <= 100 && total <= 25165824 )) || exit 1
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Retain
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: fetch-clear-${{ matrix.label }}
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            out-fetch-clear/command-exit.json
+            out-fetch-clear/run-receipt.json
+            out-fetch-clear/results/*.json
+            out-fetch-clear/results/*.bin
+            out-fetch-clear/results/*.txt
