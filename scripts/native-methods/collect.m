@@ -197,9 +197,10 @@ static BOOL wanted(NSString *className, NSString *selector) {
         [s isEqualToString:@"capabilities"]) return YES;
     if ([className isEqualToString:@"_PGDevice"] &&
         ([selector isEqualToString:@"getUserTaskID:"] || [selector isEqualToString:@"getTaskID:"] ||
-         [selector hasPrefix:@"init"] || [selector hasPrefix:@"newAsyncToken"])) return YES;
+         [s isEqualToString:@"setbinaryversion:"] || [s hasPrefix:@"getdeviceinfo:"] ||
+         [s hasPrefix:@"mmio"] || [s isEqualToString:@"reset"])) return YES;
     if ([className isEqualToString:@"PGFIFO"] &&
-        [@[@"signalStampValue:", @"faultAtStampValue:", @"faultAtOffset:stampValue:", @"pushStamp:cmdID:"] containsObject:selector]) return YES;
+        [@[@"signalStampValue:", @"faultAtStampValue:", @"faultAtOffset:stampValue:", @"pushStamp:cmdID:", @"processFifo"] containsObject:selector]) return YES;
     return NO;
 }
 int main(int argc, const char **argv) {
