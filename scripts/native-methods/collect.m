@@ -50,9 +50,8 @@ static NSDictionary *symbol(uintptr_t p) {
     return r;
 }
 static NSString *boundedString(uintptr_t p) {
-    NSDictionary *s = symbol(p);
-    NSString *image = s[@"image"];
-    if (!([image hasPrefix:@"/System/Library/"] || [image hasPrefix:@"/usr/lib/"])) return nil;
+    // Shared-cache selector pools need not have a dladdr image association.
+    // This helper is called only for bounded addresses referenced by native code.
     NSData *d = readBytes(p, 192);
     if (!d) return nil;
     const unsigned char *b = d.bytes;
@@ -65,7 +64,7 @@ static NSString *boundedString(uintptr_t p) {
     return [[NSString alloc] initWithBytes:b length:n encoding:NSUTF8StringEncoding];
 }
 static void enqueue(uintptr_t p, NSString *reason, NSUInteger depth) {
-    if (p < codeLo || p >= codeHi || depth > 2 || queue.count >= windowLimit) return;
+    if (p < codeLo || p >= codeHi || depth > 3 || queue.count >= windowLimit) return;
     if (![starts containsObject:@(p)] && starts.count) return;
     if ([queued containsObject:@(p)]) return;
     [queued addObject:@(p)];
@@ -90,6 +89,11 @@ static void reference(uintptr_t pc, uintptr_t p, NSUInteger depth) {
         NSString *s = boundedString(p), *t = boundedString(q);
         if (s) r[@"ascii"] = s;
         if (t) r[@"pointed_ascii"] = t;
+        if ([r[@"pointer_symbol"][@"name"] containsString:@"NSCFConstantString"]) {
+            uint64_t stringPointer = 0; memcpy(&stringPointer, (const uint8_t *)d.bytes + 16, 8);
+            NSString *constant = boundedString(canonical(stringPointer));
+            if (constant) r[@"constant_string"] = constant;
+        }
         if (q >= codeLo && q < codeHi) enqueue(q, @"code pointer", depth + 1);
     }
     [references addObject:r];
@@ -112,10 +116,23 @@ static void scanReferences(NSData *data, uintptr_t base, NSUInteger depth) {
                 if ((x & 0xff000000U) == 0x91000000U) {
                     uintptr_t p = page + (((x >> 10) & 4095) << ((x & (1U << 22)) ? 12 : 0));
                     reference(base + j * 4, p, depth);
-                } else if ((x & 0xffc00000U) == 0xf9400000U) {
-                    reference(base + j * 4, page + (((x >> 10) & 4095) * 8), depth);
-                } else if ((x & 0xffc00000U) == 0xb9400000U) {
-                    reference(base + j * 4, page + (((x >> 10) & 4095) * 4), depth);
+                    if ((x & 31) == reg) page = p;
+                } else {
+                    unsigned scale = 0;
+                    switch (x & 0xffc00000U) {
+                        case 0xf9400000U: case 0xfd400000U: scale = 8; break;
+                        case 0xb9400000U: case 0xbd400000U: scale = 4; break;
+                        case 0x39400000U: scale = 1; break;
+                        case 0x3dc00000U: scale = 16; break;
+                    }
+                    if (scale) {
+                        uintptr_t p = page + (((x >> 10) & 4095) * scale);
+                        reference(base + j * 4, p, depth);
+                        if ((x & 31) == reg && (x & 0xffc00000U) == 0xf9400000U) {
+                            NSData *ptr = readBytes(p, 8); uint64_t value = 0;
+                            if (!ptr) break; memcpy(&value, ptr.bytes, 8); page = canonical(value);
+                        } else if ((x & 31) == reg && (x & 0x04000000U) == 0) break;
+                    }
                 }
             }
         } else if ((w & 0x9f000000U) == 0x10000000U) { // ADR
@@ -173,13 +190,16 @@ static void collectWindow(NSDictionary *item) {
 }
 static BOOL wanted(NSString *className, NSString *selector) {
     NSString *s = selector.lowercaseString;
-    if (([s containsString:@"synchroniz"] || [s containsString:@"discard"]) &&
+    if (([className isEqualToString:@"PGFIFO"] || [className isEqualToString:@"PGRemoteTask"]) &&
+        ([s containsString:@"synchroniz"] || [s containsString:@"discard"]) &&
         ([s containsString:@"resource"] || [s containsString:@"child"])) return YES;
-    if ([s containsString:@"feature"] || [s isEqualToString:@"capabilities"]) return YES;
+    if ([s isEqualToString:@"features"] || [s isEqualToString:@"devicefeaturelevel"] ||
+        [s isEqualToString:@"capabilities"]) return YES;
     if ([className isEqualToString:@"_PGDevice"] &&
-        ([selector isEqualToString:@"getUserTaskID:"] || [selector isEqualToString:@"getTaskID:"])) return YES;
+        ([selector isEqualToString:@"getUserTaskID:"] || [selector isEqualToString:@"getTaskID:"] ||
+         [selector hasPrefix:@"init"] || [selector hasPrefix:@"newAsyncToken"])) return YES;
     if ([className isEqualToString:@"PGFIFO"] &&
-        [@[@"signalStampValue:", @"faultAtStampValue:", @"pushStamp:cmdID:"] containsObject:selector]) return YES;
+        [@[@"signalStampValue:", @"faultAtStampValue:", @"faultAtOffset:stampValue:", @"pushStamp:cmdID:"] containsObject:selector]) return YES;
     return NO;
 }
 int main(int argc, const char **argv) {
@@ -244,7 +264,7 @@ int main(int argc, const char **argv) {
                 }
             }
         }
-        NSMutableArray *methods = [NSMutableArray array], *ivars = [NSMutableArray array];
+        NSMutableArray *methods = [NSMutableArray array], *ivars = [NSMutableArray array], *catalogue = [NSMutableArray array];
         unsigned classCount = 0; Class *classes = objc_copyClassList(&classCount);
         for (unsigned i = 0; i < classCount; ++i) {
             Class cls = classes[i]; const char *im = class_getImageName(cls);
@@ -259,6 +279,9 @@ int main(int argc, const char **argv) {
                     NSString *label = [NSString stringWithFormat:@"%c[%@ %@]", kind ? '+' : '-', cn, selector];
                     if (!names[@(p)]) names[@(p)] = [NSMutableArray array];
                     [names[@(p)] addObject:label];
+                    if ([cn isEqualToString:@"_PGDevice"] || [cn isEqualToString:@"PGFIFO"]) {
+                        [catalogue addObject:@{@"class":cn, @"selector":selector, @"vmaddr":hx(p - slide)}];
+                    }
                     if (wanted(cn, selector)) {
                         [methods addObject:@{@"class":cn, @"selector":selector, @"kind":kind ? @"class" : @"instance",
                             @"types":@(method_getTypeEncoding(ms[j])), @"vmaddr":hx(p - slide), @"runtime_address":hx(p)}];
@@ -282,9 +305,9 @@ int main(int argc, const char **argv) {
             @{@"schema":@"bounded-native-methods-v1", @"image":@(image), @"uuid":uuid,
               @"cputype":@(h->cputype), @"cpusubtype":@(h->cpusubtype), @"slide":hx(slide),
               @"runtime_header":hx((uintptr_t)h), @"segments":segments, @"sections":sections,
-              @"function_starts_count":@(starts.count), @"methods":methods, @"ivars":ivars,
+              @"function_starts_count":@(starts.count), @"methods":methods, @"ivars":ivars, @"catalogue":catalogue,
               @"windows":windows, @"references":references, @"external_branch_heads":stubs,
-              @"exported_code_bytes":@(exportedBytes), @"limits":@{@"code_bytes":@(byteLimit), @"windows":@(windowLimit), @"dependency_depth":@2},
+              @"exported_code_bytes":@(exportedBytes), @"limits":@{@"code_bytes":@(byteLimit), @"windows":@(windowLimit), @"dependency_depth":@3},
               @"scope":@"Own-process read-only runtime introspection; selected framework methods and bounded dependencies; no service or guest execution"}];
         NSError *error = nil;
         NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:&error];
