@@ -45,7 +45,9 @@ fragment Out fetch_float(VOut r [[stage_in]], float4 prior [[color(0)]], uint pr
                          constant Params& p [[buffer(0)]], device Trace* traces [[buffer(1)]]) {
     return observe(r,prior,primitive,p,traces);
 }
-fragment Out fetch_half(VOut r [[stage_in]], half4 prior [[color(0)]], uint primitive [[primitive_id]],
+struct HalfOut { half4 color [[color(0)]]; float4 halfDerivatives [[color(1)]]; float4 floatStages [[color(2)]]; };
+fragment HalfOut fetch_half(VOut r [[stage_in]], half4 prior [[color(0)]], uint primitive [[primitive_id]],
                         constant Params& p [[buffer(0)]], device Trace* traces [[buffer(1)]]) {
-    return observe(r,float4(prior),primitive,p,traces);
+    Out o=observe(r,float4(prior),primitive,p,traces);
+    HalfOut h; h.color=half4(o.color); h.halfDerivatives=o.halfDerivatives; h.floatStages=o.floatStages; return h;
 }
