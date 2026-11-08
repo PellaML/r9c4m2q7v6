@@ -1,0 +1,57 @@
+# REVIEW TEMPLATE ONLY. Installing or dispatching this is a separate human decision.
+name: Generic native Stencil8 observation
+run-name: Stencil8 exact colour and GPU state evidence
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: generic-stencil8-observation
+  cancel-in-progress: false
+jobs:
+  stencil:
+    if: github.event_name == 'workflow_dispatch' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [macos-26, xcode-27]
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 20
+    env:
+      STENCIL_RUNNER_LABEL: ${{ matrix.label }}
+      STENCIL_REQUIRE_PARAVIRTUAL: '1'
+    steps:
+      # Pins retained from the existing generic probe; no floating action tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Observe exact synthetic stencil behavior
+        id: observe
+        shell: bash
+        run: |
+          [[ ! -e out-stencil && ! -L out-stencil ]] || exit 1
+          echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          bash scripts/stencil/run.sh
+      - name: Enforce exact artifact allowlist, bounds and hashes
+        if: ${{ always() && steps.observe.outputs.fresh == 'true' }}
+        id: bounds
+        shell: bash
+        run: |
+          bash scripts/stencil/run.sh --check-artifacts out-stencil
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Retain bounded raw evidence and command receipts
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: stencil-${{ matrix.label }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            out-stencil/command-exit.json
+            out-stencil/run-receipt.json
+            out-stencil/source-sha256.txt
+            out-stencil/sha256.txt
+            out-stencil/results/*.json
+            out-stencil/results/*.bin
+            out-stencil/results/*.txt
