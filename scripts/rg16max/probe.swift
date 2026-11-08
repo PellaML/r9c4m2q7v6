@@ -86,7 +86,7 @@ func run(_ sourceRoot: URL, _ store: Store) throws {
     let sourceData = try input("source.bin")
     let seedData = try input("seed.bin")
     let m = try JSONDecoder().decode(Manifest.self, from: manifestData)
-    try need(m.schema == 1 && m.count == 95 && m.count <= 128 && m.width == 3 && m.height == m.count + 2 &&
+    try need(m.schema == 1 && m.count == 99 && m.count <= 128 && m.width == 3 && m.height == m.count + 2 &&
              m.pitch == 256 && m.guardBytes == 256 && m.traceGuard == 64 && m.captures.count == 19, "manifest geometry/bounds")
     try need(sourceData.count == m.count * 8 && seedData.count == m.guardBytes * 2 + m.height * m.pitch, "input lengths")
     for (i, s) in m.captures.enumerated() {

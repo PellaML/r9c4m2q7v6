@@ -165,7 +165,15 @@ fn rows() -> Vec<Row> {
     {
         add("nonfinite-diagnostic", format!("nonfinite-{i}"), s, d);
     }
-    assert_eq!(out.len(), 95);
+    // Distinguish compare-before-export from source-RTZ-before-compare at zero.
+    // The original 95 pairs above remain unchanged and in their original order.
+    for (i, bits) in [0x3300_0000, 0x3300_0001, 0x337f_ffff, 0x3380_0000]
+        .into_iter().enumerate()
+    {
+        add("zero-underflow-order", format!("positive-tiny-negative-zero-{i}"),
+            [bits, bits], [0x8000, 0x0000]);
+    }
+    assert_eq!(out.len(), 99);
     assert!(out.len() <= 128);
     out
 }
