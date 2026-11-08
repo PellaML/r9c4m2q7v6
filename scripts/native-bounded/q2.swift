@@ -14,7 +14,7 @@ func question2(_ s: Session) throws {
     try need(Set(m.q2.map { $0.name }).count == 12, "q2_duplicate_names")
     s.report["input_sha256"] = ["source": sha(source), "seed": sha(seed)]
     s.report["layout"] = ["width": width, "height": height, "active_x": 1, "active_y": 1,
-        "active_width": innerWidth, "active_height": 9, "pitch": pitch, "offset": guardBytes,
+        "active_width": innerWidth, "active_height": 10, "pitch": pitch, "offset": guardBytes,
         "trace_prefix_suffix": traceGuard, "trace_stride": 16, "vectors": rowCount,
         "padding_scope": "host-visible blit-buffer row/prefix/suffix only, not opaque texture allocation padding"]
     s.report["channel_scope"] = ["declared_fragment_returns": ["float2", "half2"], "target_channels": "RG only",
@@ -75,7 +75,7 @@ func question2(_ s: Session) throws {
             "src_rgb": a.sourceRGBBlendFactor.rawValue, "dst_rgb": a.destinationRGBBlendFactor.rawValue,
             "src_alpha": a.sourceAlphaBlendFactor.rawValue, "dst_alpha": a.destinationAlphaBlendFactor.rawValue,
             "samples": d.rasterSampleCount, "fragment": c.fragment, "vertex": "full_triangle",
-            "viewport": [0, 0, width, height, 0, 1], "scissor": [1, 1, innerWidth, 9],
+            "viewport": [0, 0, width, height, 0, 1], "scissor": [1, 1, innerWidth, 10],
             "load": "load", "store": "store", "depth_stencil": "none", "cull": "none",
             "descriptor_receipt_not_opaque_pipeline_introspection": true]
         s.report["pending_pipeline"] = state; try s.checkpoint("before_pipeline_" + c.name)
@@ -88,7 +88,7 @@ func question2(_ s: Session) throws {
         e.setRenderPipelineState(pipeline); e.setCullMode(.none); e.setTriangleFillMode(.fill)
         e.setFrontFacing(.clockwise)
         e.setViewport(MTLViewport(originX: 0, originY: 0, width: Double(width), height: Double(height), znear: 0, zfar: 1))
-        e.setScissorRect(MTLScissorRect(x: 1, y: 1, width: innerWidth, height: 9))
+        e.setScissorRect(MTLScissorRect(x: 1, y: 1, width: innerWidth, height: 10))
         e.setFragmentBuffer(inputs, offset: traceGuard, index: 0); e.setFragmentBuffer(trace, offset: traceGuard, index: 1)
         var p = SIMD4<UInt32>(UInt32(rowCount), UInt32(c.id), 0, 0)
         e.setFragmentBytes(&p, length: 16, index: 2)

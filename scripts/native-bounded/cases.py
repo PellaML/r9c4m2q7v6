@@ -15,7 +15,7 @@ import unittest
 from fractions import Fraction
 from functools import lru_cache
 
-W, H, IW, N = 17, 11, 15, 135
+W, H, IW, BASE_N, N = 17, 11, 15, 135, 150
 PITCH, GUARD, TG = 256, 256, 64
 TARGET_BYTES, TRACE_BYTES = GUARD * 2 + H * PITCH, TG * 2 + N * 16
 Q1_BYTES = TG * 2 + W * H * 24
@@ -61,6 +61,11 @@ def fmt(precision):
 def finite(bits, precision):
     eb, fb, _ = fmt(precision)
     return ((bits >> fb) & ((1 << eb) - 1)) != (1 << eb) - 1
+
+
+def nan_bits(bits, precision):
+    _, fb, _ = fmt(precision)
+    return not finite(bits, precision) and (bits & ((1 << fb) - 1)) != 0
 
 
 def decode(bits, precision):
@@ -241,12 +246,34 @@ def vectors():
         covered |= seen
     # Fill a bounded 15x9 interior with reproducible, unrelated finite pairs.
     state = 0x1a2b3c4d
-    while len(out) < N:
+    while len(out) < BASE_N:
         state = (1664525 * state + 1013904223) & 0xffffffff
         src = 0x3e800000 + (state & 0x01ffffff)
         dest = 0x3000 + ((state >> 7) % 0x1800)
         add("finite-grid", (src, (src ^ 0x80000000) + 3), (dest, dest ^ 0x8000))
+    require(len(out) == BASE_N, "legacy-prefix-budget")
+    # One additional 15-pixel row at y=10. All original 135 inputs stay first,
+    # bit-exact. These are INPUT encodings, never expected NaN output payloads.
+    for kind, source, dest in (
+        ("exception-source-qnan-positive", (0x7fc00001, 0x7fc12345), (0x3c00, 0xbc00)),
+        ("exception-source-qnan-negative", (0xffc00001, 0xffc12345), (0x3c00, 0xbc00)),
+        ("exception-source-snan-positive", (0x7f800001, 0x7fa12345), (0x4000, 0xc000)),
+        ("exception-source-snan-negative", (0xff800001, 0xffa12345), (0x4000, 0xc000)),
+        ("exception-dest-inf-posfinite", (0x3fc00000, 0x3fc00000), (0x7c00, 0xfc00)),
+        ("exception-dest-inf-negfinite", (0xbfc00000, 0xbfc00000), (0x7c00, 0xfc00)),
+        ("exception-dest-inf-poszero", (0x00000000, 0x00000000), (0x7c00, 0xfc00)),
+        ("exception-dest-inf-negzero", (0x80000000, 0x80000000), (0x7c00, 0xfc00)),
+        ("exception-dest-inf-posinf", (0x7f800000, 0x7f800000), (0x7c00, 0xfc00)),
+        ("exception-dest-inf-neginf", (0xff800000, 0xff800000), (0x7c00, 0xfc00)),
+        ("exception-tiny-posfactor", (0x00000001, 0x80000001), (0x3c00, 0x3c00)),
+        ("exception-tiny-negfactor", (0x00000001, 0x80000001), (0xbc00, 0xbc00)),
+        ("exception-submax-posfactor", (0x007fffff, 0x807fffff), (0x3800, 0x3800)),
+        ("exception-submax-negfactor", (0x007fffff, 0x807fffff), (0xb800, 0xb800)),
+        ("exception-submid-mixedfactor", (0x00400001, 0x80400001), (0x4000, 0xc000)),
+    ):
+        add(kind, source, dest)
     require(len(out) == N, "vector-budget")
+    require(N % IW == 0 and 1 + N // IW <= H, "active-rows-fit-existing-frame")
     return out
 
 
@@ -270,7 +297,7 @@ def seed():
         for x in range(W):
             for lane in range(2):
                 value = border[(x * 7 + y * 5 + lane) % len(border)]
-                if 1 <= x <= IW and 1 <= y <= 9:
+                if 1 <= x <= IW and 1 <= y <= N // IW:
                     value = vectors()[(y - 1) * IW + x - 1]["dest"][lane]
                 put16(d, GUARD + y * PITCH + x * 4 + lane * 2, value)
     return bytes(d)
@@ -542,11 +569,17 @@ def ordinary_q2(target, trace, spec, expected_mask=None, expected_mode=None):
     preservation(target, mask)
     values = trace_values(trace, spec)
     for i, (row, actual) in enumerate(zip(vectors(), values)):
-        expected = row["source"] if spec["precision"] == 32 else [narrow(v, 32, "rne") for v in row["source"]]
         # Float pass-through must be exact; half inexact conversion is measured,
         # not silently repaired. Exact half-representable anchors remain strict.
-        if spec["precision"] == 32 or row["kind"] == "exact-anchor":
-            require(tuple(expected) == actual, "return-source")
+        for lane, original in enumerate(row["source"]):
+            if nan_bits(original, 32):
+                # Only the NaN class is a trace-integrity check. Native sign,
+                # quieting, and payload bits are retained, not prescribed.
+                require(nan_bits(actual[lane], spec["precision"]), "return-source-nan-class")
+            elif spec["precision"] == 32:
+                require(original == actual[lane], "return-source")
+            elif row["kind"] == "exact-anchor":
+                require(narrow(original, 32, "rne") == actual[lane], "return-source")
         if row["kind"] == "exact-anchor":
             for lane, bit in enumerate((8, 4)):
                 if not mask & bit:
@@ -561,7 +594,7 @@ def ordinary_q2(target, trace, spec, expected_mask=None, expected_mode=None):
 def state_contract(r, spec):
     expected = dict(format=65, mask=spec["mask"], blending=True, rgb_op=0, alpha_op=0,
                     src_rgb=6 if spec["mode"] == "mul" else 1, dst_rgb=0, src_alpha=8, dst_alpha=0,
-                    samples=1, fragment=spec["fragment"], vertex="full_triangle", scissor=[1, 1, IW, 9],
+                    samples=1, fragment=spec["fragment"], vertex="full_triangle", scissor=[1, 1, IW, N // IW],
                     viewport=[0, 0, W, H, 0, 1], load="load", store="store", depth_stencil="none", cull="none")
     require(all(r["state"].get(k) == v for k, v in expected.items()), "pipeline-state-receipt")
     require(all(r[k] == spec[k] for k in ("name", "precision", "mode", "mask", "negative")) and r["tag"] == spec["id"], "q2-record-identity")
@@ -576,11 +609,14 @@ def analyze_models(target, trace, spec):
     statistics = {m[0]: {} for m in MODELS}
     lines = []
     half_conversion_mismatches = 0
+    source_nan_trace_words = 0
     for i, row in enumerate(vectors()):
         for lane in range(2):
             source, dest = values[i][lane], row["dest"][lane]
             actual = u16(target, word_offset(i, lane))
-            if spec["precision"] == 16 and source != narrow(row["source"][lane], 32, "rne"):
+            if nan_bits(row["source"][lane], 32):
+                source_nan_trace_words += 1  # Unmodeled payload/quieting, never silently omitted.
+            elif spec["precision"] == 16 and source != narrow(row["source"][lane], 32, "rne"):
                 half_conversion_mismatches += 1
             p = predictions(source, spec["precision"], dest)
             core = core_lane(source, spec["precision"], dest)
@@ -608,8 +644,11 @@ def analyze_models(target, trace, spec):
     return dict(core_words=len(actual_core), core_equivalence_classes=classes, matching_classes=winners,
                 resolved_among_enumerated_classes=len(winners) == 1, by_input_category=statistics,
                 half_source_rne_mismatches=half_conversion_mismatches if spec["precision"] == 16 else None,
+                half_source_rne_compared_words=N*2-source_nan_trace_words if spec["precision"] == 16 else None,
+                source_nan_trace_words=source_nan_trace_words,
+                source_nan_trace_policy="NaN class checked; actual sign/quiet/payload retained in raw trace and every table row; no expected NaN payload",
                 zero_subnormal_overflow_words_retained=True,
-                scope="core excludes zeros, subnormal/overflow model outputs and NaNs; those remain in the diagnostic table",
+                scope="core excludes zeros, subnormal/overflow model outputs and nonfinite inputs; every word remains in the diagnostic table",
                 physical_intermediate_width_identified=False), lines
 
 
@@ -750,7 +789,7 @@ class Tests(unittest.TestCase):
         table = [Fraction.from_float(struct.unpack("<e", struct.pack("<H", h))[0]) for h in range(0x7c00)]
         for row in vectors():
             for source, dest in zip(row["source"], row["dest"]):
-                if not finite(dest, 16):
+                if not finite(source, 32) or not finite(dest, 16):
                     continue
                 for value in (decode(source, 32), decode(source, 32) * decode(dest, 16)):
                     expected = (int(value < 0) << 15) | (bisect_right(table, abs(value)) - 1)
@@ -761,7 +800,7 @@ class Tests(unittest.TestCase):
         # so Python's binary64 product is exact before struct's binary32 rounding.
         for row in vectors():
             for source, dest in zip(row["source"], row["dest"]):
-                if not finite(dest, 16):
+                if not finite(source, 32) or not finite(dest, 16):
                     continue
                 a = struct.unpack("<f", struct.pack("<I", source))[0]
                 b = struct.unpack("<e", struct.pack("<H", dest))[0]
@@ -803,7 +842,31 @@ class Tests(unittest.TestCase):
     def test_vectors_bounds_and_categories(self):
         self.assertEqual(len(vectors()), N)
         self.assertTrue({"exact-anchor", "signed-zero", "subnormal-underflow", "finite-overflow", "masked-g-sentinel"} <= {r["kind"] for r in vectors()})
-        self.assertTrue(all(finite(s, 32) for r in vectors() for s in r["source"]))
+        self.assertTrue(all(finite(s, 32) for r in vectors()[:BASE_N] for s in r["source"]))
+        self.assertEqual(N - BASE_N, 15)
+        self.assertEqual(N // IW, 10)
+
+    def test_source_nan_payloads_are_observed_not_prescribed(self):
+        for spec_index in (1, 5):
+            s = specs()[spec_index]
+            target, trace = _fixture(s)
+            for i in range(BASE_N, BASE_N + 4):
+                for lane in range(2):
+                    raw = (0x7fa34567, 0xffc54321)[lane] if s["precision"] == 32 else (0x7c35, 0xfe67)[lane]
+                    struct.pack_into("<I", trace, TG + i*16 + 8 + lane*4, raw)
+                    put16(target, word_offset(i, lane), (0x7e19, 0xfe35)[lane])
+            ordinary_q2(target, trace, s)
+            summary, lines = analyze_models(target, trace, s)
+            self.assertEqual(len(lines), N*2)
+            self.assertEqual(summary["source_nan_trace_words"], 8)
+            if s["precision"] == 16:
+                self.assertEqual(summary["half_source_rne_compared_words"], 292)
+                self.assertEqual(summary["half_source_rne_mismatches"], 0)
+            self.assertTrue(all(line.split("\t")[9:] == ["unmodeled"]*len(MODELS)
+                                for line in lines[BASE_N*2:(BASE_N+4)*2]))
+            struct.pack_into("<I", trace, TG + BASE_N*16 + 8, 0)
+            with self.assertRaisesRegex(Refusal, "return-source-nan-class"):
+                ordinary_q2(target, trace, s)
 
     def test_inputs_only_and_deterministic(self):
         a = inputs()

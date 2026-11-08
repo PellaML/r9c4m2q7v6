@@ -4,7 +4,7 @@ import Metal
 import CryptoKit
 import Dispatch
 
-let width = 17, height = 11, innerWidth = 15, rowCount = 135
+let width = 17, height = 11, innerWidth = 15, rowCount = 150
 let pitch = 256, guardBytes = 256, traceGuard = 64
 let targetBytes = guardBytes * 2 + pitch * height
 struct Failure: Error { let reason: String }
