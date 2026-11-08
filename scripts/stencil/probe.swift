@@ -493,7 +493,7 @@ final class Harness {
         e.setFrontFacing(d.winding == "ccw" ? .counterClockwise : .clockwise)
         e.setScissorRect(MTLScissorRect(x: d.rect[0], y: d.rect[1], width: d.rect[2], height: d.rect[3]))
         if d.splitRef {
-            e.setStencilFrontReferenceValue(d.frontRef, backReferenceValue: d.backRef)
+            e.setStencilReferenceValues(front: d.frontRef, back: d.backRef)
         } else {
             e.setStencilReferenceValue(d.frontRef)
         }
