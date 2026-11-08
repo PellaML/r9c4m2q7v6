@@ -26,7 +26,7 @@ func textureInfo(_ t: MTLTexture) -> [String: Any] {
      "type": t.textureType.rawValue, "width": t.width, "height": t.height, "depth": t.depth,
      "mips": t.mipmapLevelCount, "slices": t.arrayLength, "samples": t.sampleCount,
      "buffer_backed_property": t.buffer != nil, "buffer_offset": t.bufferOffset,
-     "buffer_pitch": t.bufferBytesPerRow, "parent_present": t.parentTexture != nil,
+     "buffer_pitch": t.bufferBytesPerRow, "parent_present": t.parent != nil,
      "parent_level": t.parentRelativeLevel, "parent_slice": t.parentRelativeSlice,
      "swizzle": swizzleInfo(t.swizzle), "framebuffer_only": t.isFramebufferOnly,
      "hazard_tracking": t.hazardTrackingMode.rawValue]
@@ -130,7 +130,7 @@ final class Session {
                  "buffer_remapped_or_properties_changed_no_substitute")
         if mode != .private {
             memset(b.contents(), 0xcd, b.length)
-            if mode == .managed { b.didModifyRange(NSRange(location: 0, length: b.length)) }
+            if mode == .managed { b.didModifyRange(0..<b.length) }
         }
         return b
     }

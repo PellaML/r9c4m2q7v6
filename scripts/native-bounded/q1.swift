@@ -114,7 +114,7 @@ func question1(_ s: Session, _ mode: MTLStorageMode) throws {
             t.width == width && t.height == height && t.depth == 1 && t.mipmapLevelCount == 1 &&
             t.arrayLength == 1 && t.sampleCount == 1 && t.usage == d.usage &&
             t.usage.rawValue == (format == .r8Unorm ? 23 : 1) && t.buffer === b &&
-            t.bufferOffset == offset && t.bufferBytesPerRow == rowPitch && t.parentTexture == nil &&
+            t.bufferOffset == offset && t.bufferBytesPerRow == rowPitch && t.parent == nil &&
             swizzleInfo(t.swizzle) == swizzleInfo(identity) && t.hazardTrackingMode == .tracked,
             role + "_actual_properties_or_storage_remap")
         return t
@@ -122,18 +122,18 @@ func question1(_ s: Session, _ mode: MTLStorageMode) throws {
     func view(_ parent: MTLTexture, _ b: MTLBuffer, _ role: String) throws -> MTLTexture {
         try s.checkpoint("before_" + role + "_a8_view")
         guard let t = parent.makeTextureView(pixelFormat: .a8Unorm, textureType: .type2D,
-            levels: NSRange(location: 0, length: 1), slices: NSRange(location: 0, length: 1), swizzle: identity) else {
+            levels: 0..<1, slices: 0..<1, swizzle: identity) else {
             throw Failure(reason: role + "_a8_view_nil_unsupported_no_substitute")
         }
         var info = textureInfo(t)
-        info["parent_identity_matches"] = t.parentTexture === parent
-        info["backing_identity_matches"] = (t.buffer ?? t.parentTexture?.buffer) === b
+        info["parent_identity_matches"] = t.parent === parent
+        info["backing_identity_matches"] = (t.buffer ?? t.parent?.buffer) === b
         s.report[role] = info; try s.checkpoint(role + "_created")
         try need(t.pixelFormat == .a8Unorm && t.storageMode == mode && t.textureType == .type2D &&
             t.width == width && t.height == height && t.depth == 1 && t.mipmapLevelCount == 1 &&
             t.arrayLength == 1 && t.sampleCount == 1 && t.usage == parentUsage && t.usage.rawValue == 23 &&
-            t.parentRelativeLevel == 0 && t.parentRelativeSlice == 0 && t.parentTexture === parent &&
-            (t.buffer ?? t.parentTexture?.buffer) === b && swizzleInfo(t.swizzle) == swizzleInfo(identity),
+            t.parentRelativeLevel == 0 && t.parentRelativeSlice == 0 && t.parent === parent &&
+            (t.buffer ?? t.parent?.buffer) === b && swizzleInfo(t.swizzle) == swizzleInfo(identity),
             role + "_view_properties_or_alias_mismatch")
         return t
     }
@@ -202,7 +202,7 @@ func question1(_ s: Session, _ mode: MTLStorageMode) throws {
                 func mutate(_ b: MTLBuffer, _ data: Data, _ name: String) throws {
                     if phase == 1 && mode != .private {
                         data.withUnsafeBytes { b.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
-                        if mode == .managed { b.didModifyRange(NSRange(location: 0, length: length)) }
+                        if mode == .managed { b.didModifyRange(0..<length) }
                         s.report["phase1_write"] = "direct CPU buffer write; managed didModifyRange when requested"
                     } else {
                         let upload = try s.uploaded(data)
