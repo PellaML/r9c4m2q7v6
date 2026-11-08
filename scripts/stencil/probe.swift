@@ -480,15 +480,12 @@ final class Harness {
             dd.backFaceStencil = try stencilDescriptor(d.back)
         }
         let key = String(data: try JSONSerialization.data(withJSONObject: depthInfo(dd), options: .sortedKeys), encoding: .utf8)!
-        if d.mode == "nil" {
-            e.setDepthStencilState(nil)
-        } else {
-            if stateCache[key] == nil {
-                guard let state = device.makeDepthStencilState(descriptor: dd) else { throw Failure(reason: "test_state_allocation") }
-                stateCache[key] = state
-            }
-            e.setDepthStencilState(stateCache[key])
+        if stateCache[key] == nil {
+            guard let state = device.makeDepthStencilState(descriptor: dd) else { throw Failure(reason: "test_state_allocation") }
+            stateCache[key] = state
         }
+        guard let state = stateCache[key] else { throw Failure(reason: "test_state_cache_missing") }
+        e.setDepthStencilState(state)
         e.setRenderPipelineState(d.colorWrite ? paintAll : paintNone)
         e.setFrontFacing(d.winding == "ccw" ? .counterClockwise : .clockwise)
         e.setScissorRect(MTLScissorRect(x: d.rect[0], y: d.rect[1], width: d.rect[2], height: d.rect[3]))
@@ -511,7 +508,7 @@ final class Harness {
         return ["state_mode": d.mode, "descriptor_getters": depthInfo(dd),
                 "submitted_masks_u32": ["front": [d.front.readMask, d.front.writeMask],
                                          "back": [d.back.readMask, d.back.writeMask]],
-                "nil_state_bound": d.mode == "nil", "front_reference_call_u32": d.frontRef,
+                "nil_state_bound": false, "front_reference_call_u32": d.frontRef,
                 "back_reference_call_u32": d.backRef, "split_reference_call": d.splitRef,
                 "reference_getter_available": false, "scissor": d.rect,
                 "front_winding_call": d.winding, "cull_mode_call": "none",
@@ -695,7 +692,7 @@ func validate(_ m: Manifest) throws {
         if let a = c.anchorColor { try need(a.count == 4, "anchor_color_shape") }
         if c.store == "dontCare" { try need(c.anchorStencil == nil, "dontcare_stencil_anchor_forbidden") }
         for d in c.draws {
-            try need(["enabled", "default", "nil"].contains(d.mode) && ["ccw", "cw"].contains(d.winding) &&
+            try need(["enabled", "default"].contains(d.mode) && ["ccw", "cw"].contains(d.winding) &&
                      ["none", "all", "left"].contains(d.discard) && d.color.count == 4 &&
                      d.rect.count == 4 && d.rect[0] >= 0 && d.rect[1] >= 0 &&
                      d.rect[2] > 0 && d.rect[3] > 0 && d.rect[0] + d.rect[2] <= 8 &&

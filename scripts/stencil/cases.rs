@@ -320,11 +320,11 @@ fn cases() -> Vec<Case> {
         ),
     ];
 
-    // The default descriptor and a nil state are separate API cases. Neither is
-    // implemented by inventing a disabled-stencil descriptor in the bridge.
-    for (name, mode) in [("off-default", "default"), ("off-nil", "nil")] {
-        let mut d = always("replace", u32::MAX).color(GREEN);
-        d.mode = mode;
+    // Bind a real default state object; nil is not a valid encoder state.
+    // Keep the default-state anchor and exercise reference independence at zero.
+    for (name, reference) in [("off-default", u32::MAX), ("off-default-ref-zero", 0)] {
+        let mut d = always("replace", reference).color(GREEN);
+        d.mode = "default";
         v.push(Case::new(name, "stencil-off", 1, vec![d]).anchor(GREEN, 1));
     }
     let mut off = always("zero", 0).color(GREEN);
@@ -559,6 +559,24 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn default_state_controls_have_real_state_modes_and_exact_anchors() {
+        let all = cases();
+        assert!(!all.iter().any(|c| c.name == "off-nil"));
+        for (name, reference) in [("off-default", u32::MAX), ("off-default-ref-zero", 0)] {
+            let c = all.iter().find(|c| c.name == name).unwrap();
+            assert_eq!(c.anchor_color, Some(GREEN));
+            assert_eq!(c.anchor_stencil, Some(1));
+            assert_eq!(c.draws.len(), 1);
+            assert_eq!(c.draws[0].mode, "default");
+            assert_eq!(c.draws[0].front_ref, reference);
+            assert_eq!(c.draws[0].back_ref, reference);
+        }
+        for d in all.iter().flat_map(|c| &c.draws) {
+            assert!(matches!(d.mode, "enabled" | "default"));
+        }
+    }
+
     #[test]
     fn full_u32_values_are_not_narrowed_by_generator() {
         let all = cases();
