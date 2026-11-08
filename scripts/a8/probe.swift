@@ -317,7 +317,8 @@ func run(_ source: URL, _ store: Store) throws {
     }
 
     let formats: [(String, MTLPixelFormat)] = [("a8", .a8Unorm), ("r8", .r8Unorm)]
-    let modes: [(String, MTLStorageMode)] = [("private", .private), ("shared", .shared)]
+    // Separate Managed-only follow-up; do not silently substitute storage modes.
+    let modes: [(String, MTLStorageMode)] = [("managed", .managed)]
     var serial: UInt32 = 0
     for (formatName, format) in formats {
         for (modeName, mode) in modes {
@@ -345,6 +346,7 @@ func run(_ source: URL, _ store: Store) throws {
                                                                     height: c.height, mipmapped: false)
                     d.storageMode = mode; d.usage = .shaderRead
                     d.swizzle = MTLTextureSwizzleChannels(red: .red, green: .green, blue: .blue, alpha: .alpha)
+                    obs["descriptor_resource_options"] = d.resourceOptions.rawValue
                     guard let t = dev.makeTexture(descriptor: d) else {
                         throw Failure(message: "requested texture format/storage allocation failed; no substitution")
                     }
@@ -361,7 +363,7 @@ func run(_ source: URL, _ store: Store) throws {
                              t.mipmapLevelCount == 1 && t.arrayLength == 1 && t.sampleCount == 1 && t.buffer == nil &&
                              sw.red == .red && sw.green == .green && sw.blue == .blue && sw.alpha == .alpha,
                              "actual texture properties differ from requested properties")
-                    if mode == .private {
+                    if mode == .private || mode == .managed {
                         let pitch = ((c.width + 255) / 256) * 256 + 256
                         let offset = 256, length = offset + pitch * c.height + 256
                         var bytes = [UInt8](repeating: 0xa5, count: length)
@@ -369,7 +371,7 @@ func run(_ source: URL, _ store: Store) throws {
                             for x in 0..<c.width { bytes[offset + y * pitch + x] = seed[y * c.width + x] }
                         }
                         let padded = Data(bytes), upload = try buffer(padded)
-                        obs["upload"] = ["method": "buffer-to-private-texture-blit", "bytes_per_texel": 1,
+                        obs["upload"] = ["method": "buffer-to-" + modeName + "-texture-blit", "bytes_per_texel": 1,
                             "offset": offset, "bytes_per_row": pitch, "bytes_per_image": pitch * c.height,
                             "length": length, "padding_byte": 165, "sha256": sha(padded),
                             "source_storage": upload.storageMode.rawValue]
@@ -427,7 +429,7 @@ func run(_ source: URL, _ store: Store) throws {
             }
         }
     }
-    try need(observations.count == 20 && errors.isEmpty && negativeComplete,
+    try need(observations.count == 10 && errors.isEmpty && negativeComplete,
              "one or more required observations or negative controls failed")
     report["status"] = "OBSERVATIONS_COMPLETE"
 }

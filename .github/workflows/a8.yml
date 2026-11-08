@@ -1,5 +1,5 @@
 name: Generic alpha UNORM observation
-run-name: Alpha UNORM storage and sampling
+run-name: Alpha UNORM Managed storage and sampling
 on:
   workflow_dispatch:
 permissions:
