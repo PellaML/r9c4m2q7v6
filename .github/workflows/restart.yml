@@ -1,0 +1,67 @@
+name: Generic Metal indexed restart observation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-26
+            os_build: 25G332
+          - label: xcode-27
+            os_build: 26A434
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Observe exact native bytes
+        id: observe
+        shell: bash
+        env:
+          RUNNER_LABEL: ${{ matrix.label }}
+          EXPECTED_OS_BUILD: ${{ matrix.os_build }}
+        run: |
+          [[ ! -e out-restart && ! -L out-restart ]] || exit 1
+          echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          bash scripts/restart/run.sh
+      - name: Bound and verify retained source-derived artifacts
+        if: ${{ always() && steps.observe.outputs.fresh == 'true' }}
+        id: bounds
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(out-restart/*.json out-restart/*.txt out-restart/*.tsv
+                 out-restart/results/*.json out-restart/results/*.tsv out-restart/results/*.bin
+                 out-restart/results/*.air out-restart/results/*.metallib)
+          [[ -d out-restart && ! -L out-restart && ! -L out-restart/results ]] || exit 1
+          total=0
+          for f in "${files[@]}"; do
+            [[ -f "$f" && ! -L "$f" ]] || exit 1
+            n=$(wc -c < "$f"); (( n <= 2097152 )) || exit 1
+            total=$((total+n))
+          done
+          (( ${#files[@]} >= 4 && ${#files[@]} <= 128 && total <= 8388608 )) || exit 1
+          (cd out-restart && shasum -a 256 -c sha256.txt)
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        with:
+          name: restart-${{ matrix.label }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            out-restart/*.json
+            out-restart/*.txt
+            out-restart/*.tsv
+            out-restart/results/*.json
+            out-restart/results/*.tsv
+            out-restart/results/*.bin
+            out-restart/results/*.air
+            out-restart/results/*.metallib
