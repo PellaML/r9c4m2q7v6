@@ -173,7 +173,16 @@ fn rows() -> Vec<Row> {
         add("zero-underflow-order", format!("positive-tiny-negative-zero-{i}"),
             [bits, bits], [0x8000, 0x0000]);
     }
-    assert_eq!(out.len(), 99);
+    // Cancellation distinguishes summing the actual float return from narrowing
+    // that source to half before fixed-function addition. Keep old99 unchanged.
+    for (i, (bits, destination)) in [
+        (0x3f80_0001, 0xbc00), (0x3f7f_ffff, 0xbc00),
+        (0x4000_0001, 0xc000), (0x3eff_ffff, 0xb800),
+    ].into_iter().enumerate() {
+        add("cancellation-order", format!("float-source-cancellation-{i}"),
+            [bits, bits ^ 0x8000_0000], [destination, destination ^ 0x8000]);
+    }
+    assert_eq!(out.len(), 103);
     assert!(out.len() <= 128);
     out
 }
