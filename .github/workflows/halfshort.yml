@@ -1,0 +1,71 @@
+name: Generic native half and signed integer conversions
+run-name: Exhaustive half to short and independent int control
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: generic-halfshort-observation
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [macos-26, xcode-27]
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Build exact offline libraries and capture
+        id: observe
+        shell: bash
+        run: |
+          [[ ! -e out-halfshort && ! -L out-halfshort ]] || exit 1
+          echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          bash scripts/halfshort/run.sh
+      - name: Enforce artifact budget
+        if: ${{ always() && steps.observe.outputs.fresh == 'true' }}
+        id: bounds
+        shell: bash
+        run: |
+          shopt -s nullglob
+          [[ -d out-halfshort/results && ! -L out-halfshort && ! -L out-halfshort/results ]] || exit 1
+          [[ -z "$(find out-halfshort ! -type f ! -type d -print -quit)" ]] || exit 1
+          [[ -z "$(find out-halfshort -mindepth 1 -type d ! -path out-halfshort/results -print -quit)" ]] || exit 1
+          files=(out-halfshort/command-exit.json out-halfshort/run-receipt.txt out-halfshort/source-sha256.txt out-halfshort/sha256.txt
+                 out-halfshort/results/*.json out-halfshort/results/*.bin out-halfshort/results/*.tsv out-halfshort/results/*.txt
+                 out-halfshort/results/*.air out-halfshort/results/*.ll out-halfshort/results/*.metallib)
+          total=0; count=0
+          for file in "${files[@]}"; do
+            [[ -f "$file" && ! -L "$file" ]] || exit 1
+            size=$(wc -c < "$file"); (( size <= 1048576 )) || exit 1
+            total=$((total+size)); count=$((count+1))
+          done
+          actual=$(find out-halfshort -type f | wc -l)
+          (( count == actual && count >= 6 && count <= 64 && total <= 8388608 )) || exit 1
+          (cd out-halfshort && shasum -a 256 -c sha256.txt > /dev/null)
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Retain bounded exact compiler and GPU artifacts
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: halfshort-${{ matrix.label }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            out-halfshort/command-exit.json
+            out-halfshort/run-receipt.txt
+            out-halfshort/source-sha256.txt
+            out-halfshort/sha256.txt
+            out-halfshort/results/*.json
+            out-halfshort/results/*.bin
+            out-halfshort/results/*.tsv
+            out-halfshort/results/*.txt
+            out-halfshort/results/*.air
+            out-halfshort/results/*.ll
+            out-halfshort/results/*.metallib
