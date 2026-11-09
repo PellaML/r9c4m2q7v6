@@ -386,7 +386,7 @@ fn arithmetic_model(s: f32, d: f32, op: usize) -> f32 {
     }
 }
 fn selection() -> Result<String> {
-    let mut t=String::from("row\tclass\tdomain\tsource_f32\tdestination_f16\tseparate_rne\touter_fma_rne\thalf_steps_rne\thalf_factor_fma_rne\tnarrow_source_rne\tseparate_rtz\n");
+    let mut t=String::from("row\tclass\tdomain\tsource_f32\tdestination_f16\tseparate_rne\touter_fma_rne\thalf_steps_rne\thalf_factor_fma_rne\tnarrow_source_rne\tseparate_rtz\touter_fma_rtz\tinner_fma_rtz\n");
     for row in 0..ROWS {
         let s = f32::from_bits(SOURCE_R[row]);
         let d = f32::from_bits(expand(DEST_R[row]));
@@ -406,17 +406,28 @@ fn selection() -> Result<String> {
                 "owned half-fusion witness collapsed",
             )?;
         }
-        if row >= 52 {
+        if (52..58).contains(&row) {
             need(
                 plain != half && DEST_R[row] & 1023 != 0,
                 "normal rounded arithmetic witness collapsed",
             )?;
         }
+        if row >= 58 {
+            // Normal finite source/destination/output witnesses selected for
+            // disagreements AFTER RTZ16 export, not merely at an f32/RNE step.
+            const EXPECTED: [[u16; 3]; 6] = [
+                [0x2cd1, 0x2cd0, 0x2cd0], [0x0aa8, 0x0aa8, 0x0aa9],
+                [0x3add, 0x3ade, 0x3ade], [0xa256, 0xa255, 0xa256],
+                [0xa995, 0xa995, 0xa996], [0x05ef, 0x05ee, 0x05ef],
+            ];
+            let got = [0, 1, 4].map(|op| prediction(s, d, op, false, false));
+            need(got == EXPECTED[row - 58].map(Some), "RTZ16 order witness collapsed")?;
+        }
         if row == 39 {
             need(plain != narrowed, "source precision witness collapsed")?;
         }
         t += &format!(
-            "{row}\t{}\t{}\t{:08x}\t{:04x}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{row}\t{}\t{}\t{:08x}\t{:04x}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             CASES[row].0,
             domain(row),
             SOURCE_R[row],
@@ -426,7 +437,9 @@ fn selection() -> Result<String> {
             hex_half(half),
             hex_half(prediction(s, d, 7, true, false)),
             hex_half(narrowed),
-            hex_model(arithmetic_model(s, d, 0).to_bits(), false)
+            hex_model(arithmetic_model(s, d, 0).to_bits(), false),
+            hex_half(prediction(s, d, 1, false, false)),
+            hex_half(prediction(s, d, 4, false, false))
         );
     }
     need(

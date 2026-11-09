@@ -282,12 +282,12 @@ pub const CASES: [(&str, u32, u16); ROWS] = [
     ("rounded-half-source-3", 0xbdd26000, 0x349d),
     ("rounded-half-source-4", 0x3dfee000, 0xb7a5),
     ("rounded-half-source-5", 0xbdac6000, 0x3799),
-    ("rounded-f32-source-0", 0xbdef6f49, 0x3465),
-    ("rounded-f32-source-1", 0xbf88686f, 0xbc0b),
-    ("rounded-f32-source-2", 0x3dab6b6d, 0x3dd9),
-    ("rounded-f32-source-3", 0x3e44240f, 0xbebd),
-    ("rounded-f32-source-4", 0x406eaea5, 0x3e9b),
-    ("rounded-f32-source-5", 0xbe177763, 0xbe81),
+    ("f32-rtz-order-witness-0", 0x3d4b89b4, 0x26e3),
+    ("f32-rtz-order-witness-1", 0x3e960f09, 0xb6a1),
+    ("f32-rtz-order-witness-2", 0xbcad11d8, 0x3ae4),
+    ("f32-rtz-order-witness-3", 0x3b3f8f9a, 0xa3db),
+    ("f32-rtz-order-witness-4", 0xbc8b9956, 0xa6b2),
+    ("f32-rtz-order-witness-5", 0xbe850549, 0x329a),
 ];
 const fn sources() -> [u32; ROWS] {
     let mut a = [0; ROWS];
