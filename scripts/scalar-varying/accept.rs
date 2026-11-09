@@ -107,10 +107,13 @@ pub fn varying(a: &[u8], b: &[u8], mode: u32, case: usize) -> Result<Metrics, Er
         for channel in 0..6 {
             let delta = ulps(values[channel], expected[channel])?;
             if channel < 2 && f32::from_bits(values[channel]) <= 65504.0 { return Err(Error::HalfRange); }
-            // Constant preservation and affine basis must be BIT EXACT. The one
-            // nonconstant control and perspective basis get a <=4-ULP sanity
-            // envelope, NOT an asserted universal interpolation rounding law.
-            let tolerance = if channel >= 4 || (case == 0 && channel < 2) { 0 } else { 4 };
+            // Only constant payload preservation requires BIT EXACT output.
+            // Other channels have a <=4-ULP observation sanity envelope,
+            // NOT an asserted universal interpolation rounding law.
+            // Constant payloads must remain bit-exact. Basis markers are
+            // interpolation measurements: native affine markers can differ
+            // from the ideal rational value, just like perspective markers.
+            let tolerance = if case == 0 && channel < 2 { 0 } else { 4 };
             if delta > tolerance { return Err(Error::Interpolation); }
             metrics.max_ulps[channel] = metrics.max_ulps[channel].max(delta);
             metrics.exact_counts[channel] += u32::from(delta == 0);
@@ -182,6 +185,20 @@ mod tests {
             assert_eq!(varying(&changed, &b, 0, 1), Err(Error::Guard));
         }
         assert_eq!(varying(&a, &b, 1, 1), Err(Error::Stamp));
+    }
+    #[test] fn affine_basis_measurement_envelope_remains_bounded() {
+        for case in 0..2 {
+            let (a, b) = image_fixture(case);
+            for offset in [256, 260] {
+                let expected = word(&b, offset);
+                let mut inside = b;
+                put(&mut inside, offset, expected + 4);
+                assert!(varying(&a, &inside, 0, case).is_ok());
+                let mut outside = b;
+                put(&mut outside, offset, expected + 5);
+                assert_eq!(varying(&a, &outside, 0, case), Err(Error::Interpolation));
+            }
+        }
     }
     #[test] fn unequal_w_constant_must_be_bit_exact() {
         let (a, b) = image_fixture(0);

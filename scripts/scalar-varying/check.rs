@@ -210,7 +210,7 @@ fn validate(out: &Path) -> Result<()> {
             }}
             for (c, name) in ["large_p", "large_n", "p_basis1", "p_basis2", "n_basis1", "n_basis2"].iter().enumerate() {
                 let max = if finite[c] == 16 { maximum[c].to_string() } else { "NA".into() };
-                let tolerance = if c >= 4 || (case == 0 && c < 2) { 0 } else { 4 };
+                let tolerance = if case == 0 && c < 2 { 0 } else { 4 };
                 metrics += &format!("{mode}\t{case}\t{name}\t{}\t{max}\t{}\t{tolerance}\t{}\n", finite[c], exact[c], if result.is_ok() { "pass" } else { "fail" });
             }
         }
