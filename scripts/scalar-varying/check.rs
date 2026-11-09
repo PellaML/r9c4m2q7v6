@@ -97,8 +97,18 @@ fn stage<'a>(ir: &'a str, root: &str, entry: &str) -> Result<Vec<&'a str>> {
     Ok(out)
 }
 fn location(record: &str) -> Result<&str> {
-    let start = record.find("!\"user(").ok_or("user location")? + 2;
-    let tail = &record[start..]; Ok(&tail[..tail.find('"').ok_or("location close")?])
+    // Both explicit user locations and compiler-generated structural links
+    // are identities. Preserve the full spelling when joining the two stages.
+    let identities: Vec<_> = record.split("!\"").skip(1)
+        .filter_map(|part| part.split_once('"').map(|v| v.0))
+        .filter(|value| value.starts_with("user(") || value.starts_with("generated("))
+        .collect();
+    need(identities.len() == 1, "unique linkage identity")?;
+    let identity = identities[0];
+    let payload = identity.split_once('(').ok_or("linkage opening")?.1
+        .strip_suffix(')').ok_or("linkage closing")?;
+    need(!payload.is_empty() && payload.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'), "linkage payload")?;
+    Ok(identity)
 }
 fn varying_proof(ir: &str) -> Result<String> {
     for entry in ["large_vertex", "large_fragment"] {
@@ -237,6 +247,19 @@ mod tests {
          "!7 = !{!\"air.fragment_input\", !\"user(locn1)\", !\"float3\", !\"air.center\", !\"air.no_perspective\"}"].join("\n")
     }
     #[test] fn live_call_and_link_graph() { assert!(air(&fixture()).is_ok()); }
+    #[test] fn generated_linkage_identity_is_exact_and_unambiguous() {
+        let generated = fixture().replace("user(locn0)", "generated(3fooDv3_f)")
+            .replace("user(locn1)", "generated(3barDv3_f)");
+        assert!(air(&generated).is_ok());
+        for bad in [
+            generated.replace("generated(3barDv3_f)", "generated(3fooDv3_f)"),
+            generated.replacen("generated(3fooDv3_f)", "user(3fooDv3_f)", 1),
+            generated.replace("generated(3fooDv3_f)", "generated()"),
+            generated.replace("generated(3fooDv3_f)", "generated(3fooDv3_f"),
+            generated.replace("generated(3fooDv3_f)", "generated(3foo Dv3_f)"),
+            generated.replace("!\"generated(3fooDv3_f)\"", "!\"generated(3fooDv3_f)\", !\"user(extra)\""),
+        ] { assert!(air(&bad).is_err()); }
+    }
     #[test] fn refuses_conversion_substitutions_dead_and_comment_only() {
         for (from, to) in [("u.i16.f.f16", "s.i16.f.f16"), ("call i16", "call i32"), ("half %x)", "float %x)"),
             ("half %x)", "half 0xH3C00)"), ("store i16 %v", "store i16 0"), ("store i16 %v", "; store i16 %v"),
