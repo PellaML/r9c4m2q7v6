@@ -2,7 +2,10 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-pub const ROWS: usize = 16;
+pub const ROWS: usize = 64;
+pub const MATH_STRIDE: usize = 96;
+pub const MATH_BYTES: usize = 128 + (ROWS + 4) * MATH_STRIDE;
+pub const MODES: [&str; 2] = ["precise", "fast"];
 pub const WIDTH: usize = 3;
 pub const HEIGHT: usize = ROWS + 2;
 pub const PITCH: usize = 256;
@@ -31,6 +34,7 @@ pub enum Kind {
     Clear,
     ClearZero,
     ClearNegativeZero,
+    ClearProbe,
     Load,
     Replace,
     Blend,
@@ -47,7 +51,7 @@ pub struct Spec {
 }
 
 // Only three render states and two mask-isolation controls, not a blend sweep.
-pub const SPECS: [Spec; 14] = [
+pub const SPECS: [Spec; 21] = [
     Spec {
         name: "seed",
         kind: Kind::Seed,
@@ -160,33 +164,190 @@ pub const SPECS: [Spec; 14] = [
         tag: 14,
         negative: true,
     },
+    Spec {
+        name: "clear-tie",
+        kind: Kind::ClearProbe,
+        bits: 0,
+        mask: 0,
+        tag: 15,
+        negative: false,
+    },
+    Spec {
+        name: "clear-tie-below",
+        kind: Kind::ClearProbe,
+        bits: 0,
+        mask: 0,
+        tag: 16,
+        negative: false,
+    },
+    Spec {
+        name: "clear-tie-above",
+        kind: Kind::ClearProbe,
+        bits: 0,
+        mask: 0,
+        tag: 17,
+        negative: false,
+    },
+    Spec {
+        name: "clear-subnormal",
+        kind: Kind::ClearProbe,
+        bits: 0,
+        mask: 0,
+        tag: 18,
+        negative: false,
+    },
+    Spec {
+        name: "clear-underflow",
+        kind: Kind::ClearProbe,
+        bits: 0,
+        mask: 0,
+        tag: 19,
+        negative: false,
+    },
+    Spec {
+        name: "clear-overflow",
+        kind: Kind::ClearProbe,
+        bits: 0,
+        mask: 0,
+        tag: 20,
+        negative: false,
+    },
+    Spec {
+        name: "clear-odd-tie",
+        kind: Kind::ClearProbe,
+        bits: 0,
+        mask: 0,
+        tag: 21,
+        negative: false,
+    },
 ];
 
-// Below / at / above the half midpoint after 1.0, both signs; two finite-end
-// ties and exact largest finite halves. No NaN, infinity or overflow campaign.
-pub const SOURCE_R: [u32; ROWS] = [
-    0x3f40_0000,
-    0xc000_0000,
-    0x3f80_0000,
-    0x3e00_0000,
-    0x0000_0000,
-    0x8000_0000,
-    0x3f80_0fff,
-    0x3f80_1000,
-    0x3f80_1001,
-    0xbf80_0fff,
-    0xbf80_1000,
-    0xbf80_1001,
-    0x477f_e000,
-    0xc77f_e000,
-    0x477f_d000,
-    0xc77f_d000,
+// Frozen synthetic discriminators. No captured values or source clamping.
+pub const CASES: [(&str, u32, u16); ROWS] = [
+    ("normal-anchor", 0x3f400000, 0x3400),
+    ("negative-no-clamp", 0xc0000000, 0xc400),
+    ("normal-anchor", 0x3f800000, 0x3e00),
+    ("normal-anchor", 0x3e000000, 0xb800),
+    ("zero-plus-minus", 0x00000000, 0x8000),
+    ("zero-minus-plus", 0x80000000, 0x0000),
+    ("tie-below", 0x3f800fff, 0x3400),
+    ("tie-even", 0x3f801000, 0x3400),
+    ("tie-above", 0x3f801001, 0x3400),
+    ("negative-tie-below", 0xbf800fff, 0x3400),
+    ("negative-tie", 0xbf801000, 0x3400),
+    ("negative-tie-above", 0xbf801001, 0x3400),
+    ("finite-max", 0x477fe000, 0x0000),
+    ("negative-finite-max", 0xc77fe000, 0x0000),
+    ("finite-end-tie", 0x477fd000, 0x0000),
+    ("negative-finite-end-tie", 0xc77fd000, 0x0000),
+    ("zero-plus-plus", 0x00000000, 0x0000),
+    ("zero-minus-minus", 0x80000000, 0x8000),
+    ("f32-min-subnormal", 0x00000001, 0x0000),
+    ("negative-f32-min-subnormal", 0x80000001, 0x0000),
+    ("half-min-subnormal", 0x33800000, 0x0000),
+    ("negative-half-min-subnormal", 0xb3800000, 0x0000),
+    ("half-underflow-tie", 0x33000000, 0x0000),
+    ("negative-half-underflow-tie", 0xb3000000, 0x0000),
+    ("half-underflow-above", 0x33000001, 0x0000),
+    ("negative-half-underflow-above", 0xb3000001, 0x0000),
+    ("half-max-subnormal", 0x387fc000, 0x0000),
+    ("negative-half-max-subnormal", 0xb87fc000, 0x0000),
+    ("destination-min-subnormal", 0x00000000, 0x0001),
+    ("negative-destination-min-subnormal", 0x80000000, 0x8001),
+    ("half-min-normal", 0x38800000, 0x0000),
+    ("negative-half-min-normal", 0xb8800000, 0x0000),
+    ("source-overflow-below", 0x477fefff, 0x0000),
+    ("source-overflow-tie", 0x477ff000, 0x0000),
+    ("half-fma-owned-c", 0x3ec32000, 0x3afb),
+    ("negative-source-overflow-tie", 0xc77ff000, 0x0000),
+    ("union-positive-overflow", 0xc3000000, 0x6000),
+    ("union-negative-overflow", 0x43020000, 0x6000),
+    ("cancellation-zero", 0x40000000, 0x4000),
+    ("cancellation-below", 0x3fffffff, 0x4000),
+    ("cancellation-above", 0x40000001, 0x4000),
+    ("positive-no-clamp", 0x40000000, 0x3400),
+    ("fma-f32-subnormal-witness", 0xbeffe7df, 0x3555),
+    ("fma-half-normal-witness-a", 0x3b226000, 0x9978),
+    ("fma-half-normal-witness-b", 0x3b86e000, 0x9c25),
+    ("fma-half-large-witness", 0x46e52000, 0x3b91),
+    ("half-fma-owned-a", 0x3e44c000, 0x391b),
+    ("half-fma-owned-b", 0x3e3c4000, 0x37ed),
+    ("normal-cancellation-underflow", 0x3b000000, 0x9800),
+    ("normal-negative-cancellation-underflow", 0xbb000000, 0x1800),
+    ("normal-cancellation-min-half", 0x39800000, 0x8c00),
+    ("normal-cancellation-below-half", 0x39000000, 0x8800),
+    ("rounded-half-source-0", 0xbe00a000, 0x3fb9),
+    ("rounded-half-source-1", 0xc07a2000, 0xbe27),
+    ("rounded-half-source-2", 0xc06fa000, 0x3dd3),
+    ("rounded-half-source-3", 0xbdd26000, 0x349d),
+    ("rounded-half-source-4", 0x3dfee000, 0xb7a5),
+    ("rounded-half-source-5", 0xbdac6000, 0x3799),
+    ("rounded-f32-source-0", 0xbdef6f49, 0x3465),
+    ("rounded-f32-source-1", 0xbf88686f, 0xbc0b),
+    ("rounded-f32-source-2", 0x3dab6b6d, 0x3dd9),
+    ("rounded-f32-source-3", 0x3e44240f, 0xbebd),
+    ("rounded-f32-source-4", 0x406eaea5, 0x3e9b),
+    ("rounded-f32-source-5", 0xbe177763, 0xbe81),
 ];
-pub const DEST_R: [u16; ROWS] = [
-    0x3400, 0xc400, 0x3e00, 0xb800, 0x8000, 0, 0x3400, 0x3400, 0x3400, 0x3400, 0x3400, 0x3400, 0,
-    0, 0, 0,
-];
-
+const fn sources() -> [u32; ROWS] {
+    let mut a = [0; ROWS];
+    let mut i = 0;
+    while i < ROWS {
+        a[i] = CASES[i].1;
+        i += 1;
+    }
+    a
+}
+const fn destinations() -> [u16; ROWS] {
+    let mut a = [0; ROWS];
+    let mut i = 0;
+    while i < ROWS {
+        a[i] = CASES[i].2;
+        i += 1;
+    }
+    a
+}
+pub fn domain(row: usize) -> &'static str {
+    match row {
+        0..=3 | 6..=11 | 34 | 38..=63 => "normal-input-core",
+        32..=37 => "overflow-observation",
+        4..=5 | 16..=17 => "zero-observation",
+        12..=15 => "finite-end-observation",
+        _ => "subnormal-observation",
+    }
+}
+pub const SOURCE_R: [u32; ROWS] = sources();
+pub const DEST_R: [u16; ROWS] = destinations();
+pub fn row_enabled(tag: u32, row: usize) -> bool {
+    !(tag & 256 != 0 && (32..38).contains(&row) && row != 34)
+}
+pub fn capture_enabled(s: Spec, mode: u32) -> bool {
+    !(mode == 1 && s.name == "clear-overflow")
+}
+pub fn mode_spec(mut s: Spec, mode: u32) -> Spec {
+    s.tag |= mode << 8;
+    s
+}
+pub const fn math_tag(mode: u32, bits: u32) -> u32 {
+    0x6000 | (mode << 8) | bits
+}
+pub fn clear_value(s: Spec) -> u64 {
+    match s.kind {
+        Kind::Clear => 0x3fd8_0000_0000_0000,
+        Kind::ClearNegativeZero => 0x8000_0000_0000_0000,
+        Kind::ClearProbe => match s.tag & 255 {
+            15 => 0x3ff0_0200_0000_0000,
+            16 => 0x3ff0_01ff_ffff_ffff,
+            17 => 0x3ff0_0200_0000_0001,
+            18 => 0x3e70_0000_0000_0000,
+            19 => 0x3e60_0000_0000_0000,
+            20 => 0x40ef_fe00_0000_0000,
+            21 => 0x3ff0_0600_0000_0000,
+            _ => 0,
+        },
+        _ => 0,
+    }
+}
 pub fn source(row: usize) -> [u32; 4] {
     [
         SOURCE_R[row],
@@ -244,23 +405,142 @@ pub const fn expand(h: u16) -> u32 {
     }
 }
 
-// A bounded diagnostic model, NOT an asserted native rounding rule. Values
-// outside this experiment's finite zero/normal domain are refused, not filled.
-pub fn half_model(bits: u32, rne: bool) -> Option<u16> {
-    let magnitude = bits & 0x7fff_ffff;
-    let sign = ((bits >> 16) & 0x8000) as u16;
-    if magnitude == 0 {
-        return Some(sign);
+// IEEE integer-field hypotheses ONLY. NaN payloads are not predicted.
+fn narrow(sign: u16, exponent: i32, mantissa: u64, fraction_bits: u32, rne: bool) -> u16 {
+    if exponent > 15 {
+        return sign | if rne { 0x7c00 } else { 0x7bff };
     }
-    if !(0x3880_0000..=0x477f_e000).contains(&magnitude) {
+    if exponent < -25 {
+        return sign;
+    }
+    let (q, r, shift) = if exponent >= -14 {
+        let sh = fraction_bits - 10;
+        (
+            (((exponent + 15) as u64) << 10) | (mantissa >> sh),
+            mantissa & ((1u64 << sh) - 1),
+            sh,
+        )
+    } else {
+        let sh = (fraction_bits as i32 - 24 - exponent) as u32;
+        let v = mantissa | (1u64 << fraction_bits);
+        (v >> sh, v & ((1u64 << sh) - 1), sh)
+    };
+    let midpoint = 1u64 << (shift - 1);
+    sign | (q + u64::from(rne && (r > midpoint || (r == midpoint && q & 1 != 0)))) as u16
+}
+pub fn half_model(bits: u32, rne: bool) -> Option<u16> {
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let e = (bits >> 23) & 255;
+    let m = bits & 0x7f_ffff;
+    if e == 255 {
+        return if m == 0 { Some(sign | 0x7c00) } else { None };
+    }
+    Some(narrow(sign, e as i32 - 127, u64::from(m), 23, rne))
+}
+pub fn half64_model(bits: u64, rne: bool) -> Option<u16> {
+    let sign = ((bits >> 48) & 0x8000) as u16;
+    let e = (bits >> 52) & 2047;
+    let m = bits & 0x000f_ffff_ffff_ffff;
+    if e == 2047 {
+        return if m == 0 { Some(sign | 0x7c00) } else { None };
+    }
+    Some(narrow(sign, e as i32 - 1023, m, 52, rne))
+}
+// Exact finite half FMA hypothesis: integer multiples of 2^-48, one final
+// half rounding. No f32 double rounding and no host floating-point dependency.
+pub fn half_fma(s: u16, d: u16, k: u16, rne: bool) -> Option<u16> {
+    if [s, d, k].iter().any(|h| h & 0x7c00 == 0x7c00) {
         return None;
     }
-    let e = (magnitude >> 23) - 112;
-    let q = (e << 10) | ((magnitude & 0x7f_ffff) >> 13);
-    let r = magnitude & 8191;
-    let up = rne && (r > 4096 || (r == 4096 && q & 1 != 0));
-    Some(sign | (q + u32::from(up)) as u16)
+    fn scaled(h: u16) -> i128 {
+        let e = (h >> 10) & 31;
+        let m = i128::from(h & 1023);
+        let v = if e == 0 { m } else { (1024 + m) << (e - 1) };
+        if h & 0x8000 != 0 {
+            -v
+        } else {
+            v
+        }
+    }
+    let value = (scaled(s) << 24) + scaled(d) * scaled(k);
+    if value == 0 {
+        return Some(
+            if s & 0x7fff == 0
+                && (d & 0x7fff == 0 || k & 0x7fff == 0)
+                && s & 0x8000 != 0
+                && (d ^ k) & 0x8000 != 0
+            {
+                0x8000
+            } else {
+                0
+            },
+        );
+    }
+    let sign = if value < 0 { 0x8000 } else { 0 };
+    let n = if value < 0 {
+        (-value) as u128
+    } else {
+        value as u128
+    };
+    let exponent = (127 - n.leading_zeros()) as i32 - 48;
+    if exponent > 15 {
+        return Some(sign | if rne { 0x7c00 } else { 0x7bff });
+    }
+    if exponent < -25 {
+        return Some(sign);
+    }
+    let shift = if exponent >= -14 {
+        (38 + exponent) as u32
+    } else {
+        24
+    };
+    let q = if exponent >= -14 {
+        (((exponent + 15) as u128) << 10) + ((n >> shift) - 1024)
+    } else {
+        n >> shift
+    };
+    let rem = n & ((1u128 << shift) - 1);
+    let mid = 1u128 << (shift - 1);
+    Some(sign | (q + u128::from(rne && (rem > mid || (rem == mid && q & 1 != 0)))) as u16)
 }
+pub fn normal(h: u16) -> bool {
+    h & 0x7c00 != 0 && h & 0x7c00 != 0x7c00
+}
+pub fn math_capture(bytes: &[u8], mode: u32, bits: u32) -> Result<(), Error> {
+    if bytes.len() != MATH_BYTES {
+        return Err(Error::Length);
+    }
+    if mode > 1 || ![16, 32].contains(&bits) {
+        return Err(Error::Parameter);
+    }
+    poison(&bytes[..64])?;
+    poison(&bytes[64 + ROWS * MATH_STRIDE..])?;
+    for i in 0..ROWS {
+        let p = 64 + i * MATH_STRIDE;
+        if !row_enabled(mode << 8, i) {
+            poison(&bytes[p..p + MATH_STRIDE])?;
+            continue;
+        }
+        if word(bytes, p) != 0x554e_4900 ^ math_tag(mode, bits)
+            || word(bytes, p + 4) != i as u32
+            || word(bytes, p + 8) != bits
+            || word(bytes, p + 16) != u32::from(DEST_R[i])
+            || word(bytes, p + 60) != SOURCE_R[i]
+        {
+            return Err(Error::Trace);
+        }
+        if word(bytes, p + 88) != 0x6861_6c66 || word(bytes, p + 92) != u32::from(DEST_R[i]) {
+            return Err(Error::Trace);
+        }
+        for lane in [12, 13, 14, 16, 17, 18, 19] {
+            if word(bytes, p + lane * 4) > 0xffff {
+                return Err(Error::Trace);
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn exact_half(bits: u32) -> Option<u16> {
     let h = half_model(bits, false)?;
     (expand(h) == bits).then_some(h)
@@ -315,7 +595,9 @@ pub fn canonical(raw: &[u8], reads: &[u8], tag: u32) -> Result<(), Error> {
                 let actual = word(reads, p + lane * 4);
                 // Observe zero signs separately in each read route; canonical
                 // absent components remain exactly (G,B,A) = (0,0,1).
-                let matches = if h & 0x7fff == 0 && lane == 0 {
+                let matches = if h & 0x7fff != 0 && !normal(h) && (lane == 0 || lane == 4) {
+                    lane != 4 || actual <= 0xffff
+                } else if h & 0x7fff == 0 && lane == 0 {
                     actual & 0x7fff_ffff == 0
                 } else if h & 0x7fff == 0 && lane == 4 {
                     actual <= 0xffff && actual & 0x7fff == 0
@@ -335,12 +617,12 @@ pub fn canonical(raw: &[u8], reads: &[u8], tag: u32) -> Result<(), Error> {
 // signed-zero arithmetic and rounding order remain measured observations.
 pub fn blend_anchor(row: usize) -> Option<u16> {
     match row {
-        0 => Some(0x3a80), // .75 + .25 * (1 - .75) = .8125
-        1 => Some(0xcb00), // -2 + -4 * (1 - -2) = -14
-        2 => Some(0x3c00), // 1 + 1.5 * (1 - 1) = 1
-        3 => Some(0xb500), // .125 + -.5 * (1 - .125) = -.3125
-        12 => Some(0x7bff),
-        13 => Some(0xfbff),
+        0 => Some(0x3a80),  // .75 + .25 * (1 - .75) = .8125
+        1 => Some(0xcb00),  // -2 + -4 * (1 - -2) = -14
+        2 => Some(0x3c00),  // 1 + 1.5 * (1 - 1) = 1
+        3 => Some(0xb500),  // .125 + -.5 * (1 - .125) = -.3125
+        41 => Some(0x3f00), // 2 + .25 * (1 - 2) = 1.75; never clamp source.
+
         _ => None,
     }
 }
@@ -356,6 +638,10 @@ pub fn validate(s: Spec, raw: &[u8], trace: &[u8], reads: &[u8]) -> Result<(), E
     } else {
         for row in 0..ROWS {
             let p = 64 + row * 32;
+            if !row_enabled(s.tag, row) {
+                poison(&trace[p..p + 32])?;
+                continue;
+            }
             if [
                 word(trace, p),
                 word(trace, p + 4),
@@ -372,10 +658,13 @@ pub fn validate(s: Spec, raw: &[u8], trace: &[u8], reads: &[u8]) -> Result<(), E
                         return Err(Error::Trace);
                     }
                 } else {
-                    if value > u16::MAX as u32 || value as u16 & 0x7c00 == 0x7c00 {
+                    if value > u16::MAX as u32 {
                         return Err(Error::Trace);
                     }
-                    if let Some(h) = exact_half(input) {
+                    if input & 0x7fff_ffff == 0 && value & 0x7fff != 0 {
+                        return Err(Error::Trace);
+                    }
+                    if let Some(h) = exact_half(input).filter(|h| normal(*h)) {
                         // Sign of arithmetic zero is observed, not prescribed.
                         if h & 0x7fff == 0 {
                             if value & 0x7fff != 0 {
@@ -394,12 +683,20 @@ pub fn validate(s: Spec, raw: &[u8], trace: &[u8], reads: &[u8]) -> Result<(), E
             let h = short(raw, offset(x, y));
             match s.kind {
                 Kind::Seed | Kind::Load => {
-                    if h != seed_half(x, y) {
+                    if seed_half(x, y) & 0x7fff == 0 && h & 0x7fff != 0 {
+                        return Err(Error::Preservation);
+                    }
+                    if h != seed_half(x, y) && (s.kind == Kind::Seed || normal(seed_half(x, y))) {
                         return Err(Error::Preservation);
                     }
                 }
                 Kind::Clear => {
                     if h != 0x3600 {
+                        return Err(Error::Anchor);
+                    }
+                }
+                Kind::ClearProbe => {
+                    if h != short(raw, offset(0, 0)) {
                         return Err(Error::Anchor);
                     }
                 }
@@ -409,8 +706,16 @@ pub fn validate(s: Spec, raw: &[u8], trace: &[u8], reads: &[u8]) -> Result<(), E
                     }
                 }
                 Kind::Replace | Kind::Blend => {
-                    if x != 1 || y == 0 || y > ROWS || s.mask & 8 == 0 {
-                        if h != seed_half(x, y) {
+                    if x != 1
+                        || y == 0
+                        || y > ROWS
+                        || s.mask & 8 == 0
+                        || !row_enabled(s.tag, y.saturating_sub(1))
+                    {
+                        if seed_half(x, y) & 0x7fff == 0 && h & 0x7fff != 0 {
+                            return Err(Error::Preservation);
+                        }
+                        if normal(seed_half(x, y)) && h != seed_half(x, y) {
                             return Err(Error::Preservation);
                         }
                     } else {
@@ -425,10 +730,11 @@ pub fn validate(s: Spec, raw: &[u8], trace: &[u8], reads: &[u8]) -> Result<(), E
                                 if h & 0x7fff != 0 {
                                     return Err(Error::Anchor);
                                 }
-                            } else if h != value {
+                            } else if normal(value) && h != value {
                                 return Err(Error::Anchor);
                             }
-                        } else if let Some(want) = exact_half(SOURCE_R[row]) {
+                        } else if let Some(want) = exact_half(SOURCE_R[row]).filter(|h| normal(*h))
+                        {
                             if want & 0x7fff == 0 {
                                 if h & 0x7fff != 0 {
                                     return Err(Error::Anchor);
@@ -439,10 +745,6 @@ pub fn validate(s: Spec, raw: &[u8], trace: &[u8], reads: &[u8]) -> Result<(), E
                         }
                     }
                 }
-            }
-            // All selected inputs/results are finite within this bounded suite.
-            if h & 0x7c00 == 0x7c00 {
-                return Err(Error::Anchor);
             }
         }
     }
@@ -462,10 +764,15 @@ mod tests {
             for x in 0..WIDTH {
                 let h = match s.kind {
                     Kind::Clear => 0x3600,
+                    Kind::ClearProbe => half64_model(clear_value(s), true).unwrap(),
                     Kind::ClearZero => 0,
                     Kind::ClearNegativeZero => 0x8000,
                     Kind::Replace | Kind::Blend
-                        if x == 1 && y > 0 && y <= ROWS && s.mask & 8 != 0 =>
+                        if x == 1
+                            && y > 0
+                            && y <= ROWS
+                            && s.mask & 8 != 0
+                            && row_enabled(s.tag, y - 1) =>
                     {
                         let i = y - 1;
                         if s.kind == Kind::Blend {
@@ -503,6 +810,9 @@ mod tests {
         }
         if s.bits != 0 {
             for row in 0..ROWS {
+                if !row_enabled(s.tag, row) {
+                    continue;
+                }
                 let p = 64 + row * 32;
                 for (k, v) in [TRACE_MAGIC ^ s.tag, row as u32, s.bits, 0x7472_6163]
                     .into_iter()
@@ -543,9 +853,28 @@ mod tests {
         for h in 0x8400..=0xfbff {
             assert_eq!(exact_half(expand(h)), Some(h));
         }
-        for bits in [1, 0x7f80_0000, 0x7fc0_0000, 0x4780_0000] {
-            assert_eq!(half_model(bits, true), None);
+        assert_eq!(half_model(0x7fc0_0000, true), None);
+        for (b, rne, rtz) in [
+            (1, 0, 0),
+            (0x33800000, 1, 1),
+            (0x33000000, 0, 0),
+            (0x33000001, 1, 0),
+            (0x477ff000, 0x7c00, 0x7bff),
+            (0xc77ff000, 0xfc00, 0xfbff),
+            (0x7f800000, 0x7c00, 0x7c00),
+        ] {
+            assert_eq!(half_model(b, true), Some(rne));
+            assert_eq!(half_model(b, false), Some(rtz));
         }
+        for h in 0u16..=0xffff {
+            if h & 0x7c00 != 0x7c00 {
+                assert_eq!(half_model(expand(h), true), Some(h));
+            }
+        }
+        for s in &SPECS[14..] {
+            assert_eq!(half64_model(clear_value(*s), true).is_some(), true);
+        }
+
         assert_eq!(half_model(0x3f80_1000, true), Some(0x3c00));
         assert_eq!(half_model(0x3f80_3000, true), Some(0x3c02));
         assert_eq!(half_model(0x3f80_1001, false), Some(0x3c00));
@@ -584,7 +913,15 @@ mod tests {
         for i in 0..c.len() {
             let mut v = c;
             v[i] ^= 1;
-            assert!(validate(s, &a, &b, &v).is_err());
+            let active = i >= 64 && i < 64 + WIDTH * HEIGHT * 48;
+            let lane = if active { (i - 64) % 48 / 4 } else { 99 };
+            let pixel = if active { (i - 64) / 48 } else { 0 };
+            if !active
+                || normal(seed_half(pixel % WIDTH, pixel / WIDTH))
+                || (lane != 0 && lane != 4)
+            {
+                assert!(validate(s, &a, &b, &v).is_err());
+            }
         }
     }
     #[test]
@@ -647,5 +984,92 @@ mod tests {
             put(&mut c, 64 + i * 48 + 16, 0);
         }
         assert_eq!(validate(s, &a, &b, &c), Ok(()));
+    }
+    #[test]
+    fn arithmetic_guards_stamps_and_echoes() {
+        for mode in 0..2 {
+            for bits in [16, 32] {
+                let mut b = [POISON; MATH_BYTES];
+                for i in 0..ROWS {
+                    let p = 64 + i * MATH_STRIDE;
+                    if !row_enabled(mode << 8, i) {
+                        continue;
+                    }
+                    for lane in 0..24 {
+                        put(&mut b, p + lane * 4, 0);
+                    }
+                    put(&mut b, p, 0x554e_4900 ^ math_tag(mode, bits));
+                    put(&mut b, p + 4, i as u32);
+                    put(&mut b, p + 8, bits);
+                    put(&mut b, p + 16, u32::from(DEST_R[i]));
+                    put(&mut b, p + 60, SOURCE_R[i]);
+                    put(&mut b, p + 88, 0x6861_6c66);
+                    put(&mut b, p + 92, u32::from(DEST_R[i]));
+                }
+                assert_eq!(math_capture(&b, mode, bits), Ok(()));
+                for n in 0..b.len() {
+                    assert_eq!(math_capture(&b[..n], mode, bits), Err(Error::Length));
+                }
+                for offset in [0, 63, 64 + ROWS * MATH_STRIDE, MATH_BYTES - 1] {
+                    let mut x = b;
+                    x[offset] ^= 1;
+                    assert_eq!(math_capture(&x, mode, bits), Err(Error::Guard));
+                }
+                assert_eq!(math_capture(&b, mode ^ 1, bits), Err(Error::Trace));
+                let mut x = b;
+                x[64 + 60] ^= 1;
+                assert_eq!(math_capture(&x, mode, bits), Err(Error::Trace));
+            }
+        }
+    }
+    #[test]
+    fn frontier_outputs_are_observations_not_an_exact_only_gate() {
+        let s = SPECS[9];
+        let (mut a, b, mut c) = fixture(s);
+        for (row, h) in [
+            (18, 0x0000u16),
+            (20, 0x0001),
+            (33, 0x7c00),
+            (35, 0xfc00),
+            (36, 0x7e23),
+            (38, 0x8000),
+        ] {
+            let p = offset(1, row + 1);
+            a[p..p + 2].copy_from_slice(&h.to_le_bytes());
+            let p = 64 + ((row + 1) * WIDTH + 1) * 48;
+            put(&mut c, p, expand(h));
+            put(&mut c, p + 16, u32::from(h));
+        }
+        assert_eq!(validate(s, &a, &b, &c), Ok(()));
+        let fast = mode_spec(s, 1);
+        assert_eq!(validate(fast, &a, &b, &c), Err(Error::Trace));
+    }
+    #[test]
+    fn finite_factor_rounds_and_exact_half_fma_is_general() {
+        assert_eq!(half_model(65505.0f32.to_bits(), true), Some(0x7bff));
+        assert_eq!(half_model(65505.0f32.to_bits(), false), Some(0x7bff));
+        assert_eq!(half_fma(0xfbff, 0, 0x7bff, true), Some(0xfbff));
+        assert_eq!(half_fma(0x4000, 0x4000, 0xbc00, true), Some(0));
+        assert_eq!(half_fma(0x8000, 0x8000, 0x3c00, true), Some(0x8000));
+        assert_eq!(half_fma(0x7c00, 0, 0xfc00, true), None);
+    }
+    #[test]
+    fn fast_scope_is_explicit_and_normals_are_not_skipped() {
+        assert_eq!((0..ROWS).filter(|&row| !row_enabled(256, row)).count(), 5);
+        for base in SPECS.into_iter().filter(|s| capture_enabled(*s, 1)) {
+            let s = mode_spec(base, 1);
+            let (a, b, c) = fixture(s);
+            assert_eq!(validate(s, &a, &b, &c), Ok(()), "{}", s.name);
+        }
+        let s = mode_spec(SPECS[9], 1);
+        let (a, mut b, c) = fixture(s);
+        b[64 + 32 * 32] = 0;
+        assert_eq!(validate(s, &a, &b, &c), Err(Error::Guard));
+        for row in [
+            12, 13, 34, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+            61, 62, 63,
+        ] {
+            assert!(row_enabled(256, row));
+        }
     }
 }

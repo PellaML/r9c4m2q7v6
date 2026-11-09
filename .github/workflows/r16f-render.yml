@@ -19,8 +19,16 @@ concurrency:
 jobs:
   observe:
     if: github.event_name == 'workflow_dispatch' && inputs.main_reviewed == true && inputs.reviewed_commit == github.sha && github.repository == 'PellaML/r9c4m2q7v6' && github.ref == 'refs/heads/research/probe' && github.run_attempt == '1'
-    runs-on: xcode-27
-    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-26
+            build: 25G332
+          - label: xcode-27
+            build: 26A434
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -29,8 +37,8 @@ jobs:
       - name: Inspect loaded AIR and collect bounded native observations
         id: observe
         env:
-          RUNNER_LABEL: xcode-27
-          EXPECTED_OS_BUILD: 26A434
+          RUNNER_LABEL: ${{ matrix.label }}
+          EXPECTED_OS_BUILD: ${{ matrix.build }}
         run: |
           [[ ! -e out-r16f-render && ! -L out-r16f-render ]] || exit 1
           echo 'fresh=true' >> "$GITHUB_OUTPUT"
@@ -44,7 +52,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
         with:
-          name: r16f-render-xcode-27-26A434-precise
+          name: r16f-render-${{ matrix.label }}-${{ matrix.build }}-both-modes
           retention-days: 3
           if-no-files-found: error
           path: |

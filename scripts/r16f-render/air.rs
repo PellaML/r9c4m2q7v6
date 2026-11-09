@@ -10,11 +10,12 @@ fn need(ok: bool, why: &str) -> Result<()> {
     }
 }
 
-pub const ENTRIES: [(&str, u8); 4] = [
+pub const ENTRIES: [(&str, u8); 5] = [
     ("triangle", 0),
     ("emit_f32", 1),
     ("emit_f16", 1),
     ("observe", 2),
+    ("arithmetic", 2),
 ];
 
 // Small dependency-free SHA-256; known-answer tests below. It is only used for
@@ -477,6 +478,48 @@ pub fn proof(text: &str, entry: &str, kind: u8) -> Result<String> {
                 "read-only unsampled observation",
             )?;
         }
+        "arithmetic" => {
+            need(kind == 2, "arithmetic control stage")?;
+            let roots: Vec<_> = b
+                .lines()
+                .filter(|l| l.trim_start().starts_with("store ") && l.contains("addrspace(1)"))
+                .flat_map(|l| refs(l, b'%'))
+                .collect();
+            let deps = dependencies(b, roots)?;
+            need(
+                deps.iter()
+                    .any(|l| l.starts_with("load ") && l.contains("addrspace(1)")),
+                "dynamic control inputs",
+            )?;
+            need(
+                deps.iter().any(|l| {
+                    l.contains("call ")
+                        && [
+                            "@air.fma.f32(",
+                            "@llvm.fma.f32(",
+                            "@air.fma.v2f32(",
+                            "@llvm.fma.v2f32(",
+                            "@air.fma.v4f32(",
+                            "@llvm.fma.v4f32(",
+                        ]
+                        .iter()
+                        .any(|name| l.contains(name))
+                }),
+                "live explicit fma control",
+            )?;
+            report += "ARITHMETIC_CONTROL_INSTRUCTIONS (observed contraction, not assumed):\n";
+            for l in b.lines().filter(|l| {
+                l.contains("fadd ")
+                    || l.contains("fsub ")
+                    || l.contains("fmul ")
+                    || l.contains("fma")
+                    || l.contains("fptrunc")
+                    || l.contains("air.convert")
+            }) {
+                report += l;
+                report.push('\n');
+            }
+        }
         _ => return Err("unexpected probe entry".into()),
     }
     for line in metadata {
@@ -683,5 +726,32 @@ mod tests {
             2
         )
         .is_err());
+    }
+    #[test]
+    fn arithmetic_fma_control_must_be_live_and_dynamic() {
+        let ir = [
+            "define void @arithmetic(ptr addrspace(1) %input, ptr addrspace(1) %out) {",
+            "%x = load float, ptr addrspace(1) %input",
+            "%v = call float @air.fma.f32(float %x, float %x, float %x)",
+            "store float %v, ptr addrspace(1) %out",
+            "ret void",
+            "}",
+            "!air.kernel = !{!0}",
+            "!0 = !{ptr @arithmetic, !1}",
+            "!1 = !{}",
+        ]
+        .join("\n");
+        assert!(proof(&ir, "arithmetic", 2).is_ok());
+        let vector = ir
+            .replace("float", "<2 x float>")
+            .replace("@air.fma.f32(", "@air.fma.v2f32(");
+        assert!(proof(&vector, "arithmetic", 2).is_ok());
+        for bad in [
+            ir.replace("store float %v", "store float 0.0"),
+            ir.replace("@air.fma.f32", "@air.fmul.f32"),
+            ir.replace("load float", "freeze float"),
+        ] {
+            assert!(proof(&bad, "arithmetic", 2).is_err());
+        }
     }
 }
