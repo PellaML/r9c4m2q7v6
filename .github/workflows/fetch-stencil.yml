@@ -1,0 +1,53 @@
+name: Owned strip stencil helper observation
+run-name: Bounded straight-line strip stencil observation
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        description: Exact approved source commit
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: owned-strip-stencil-observation
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'PellaML/r9c4m2q7v6' && github.ref == 'refs/heads/research/probe' && github.run_attempt == '1' && github.sha == inputs.expected_head
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [macos-26, xcode-27]
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Acquire ten diagnostics and three visible-color topology controls
+        shell: bash
+        run: bash scripts/fetch-edge/stencil.sh out-fetch-stencil
+      - name: Enforce exact allowlisted artifact budget
+        if: always()
+        id: bounds
+        shell: bash
+        run: |
+          bash scripts/fetch-edge/stencil.sh --check-artifacts out-fetch-stencil
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Retain bounded native observations and model checks
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: fetch-stencil-${{ matrix.label }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            out-fetch-stencil/command-exit.json
+            out-fetch-stencil/run-receipt.json
+            out-fetch-stencil/source-sha256.txt
+            out-fetch-stencil/results/*.json
+            out-fetch-stencil/results/*.tsv
+            out-fetch-stencil/results/*.bin
+            out-fetch-stencil/results/*.txt
