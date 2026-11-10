@@ -24,11 +24,21 @@ struct Spec{
 var report:[String:Any]=["schema":1,"status":"FAILED_NOT_PASS","native_observation_only":true]
 var commands:[[String:Any]]=[]
 var observations:[[String:Any]]=[]
+var caseAttempts:[[String:Any]]=[]
+var caseFailures:[[String:Any]]=[]
+func errorDetails(_ error:Error)->[String:Any]{
+    if let f=error as? Failure{return ["reason":String(f.reason.prefix(128))]}
+    let e=error as NSError
+    return ["reason":"native_API_error","error_domain":String(e.domain.prefix(128)),
+            "error_code":e.code,"error_description":String(decoding:e.localizedDescription.utf8.prefix(2048),as:UTF8.self)]
+}
 var hashes:[String:String]=[:]
 var outputBytes=0
 var drawCount=0
 var root=URL(fileURLWithPath:CommandLine.arguments.last ?? ".")
 func flush()throws{
+    try need(caseAttempts.count<=13 && caseFailures.count<=13,"case_diagnostic_budget")
+    report["case_attempts"]=caseAttempts;report["case_failures"]=caseFailures
     report["commands"]=commands;report["cases"]=observations;report["output_sha256"]=hashes
     report["output_bytes"]=outputBytes;report["draw_count"]=drawCount
     let data=try JSONSerialization.data(withJSONObject:report,options:[.sortedKeys,.prettyPrinted])
@@ -89,6 +99,16 @@ final class Harness{
     let queryPipeline:MTLRenderPipelineState,queryState:MTLDepthStencilState,seedState:MTLDepthStencilState
     var pipelines:[String:MTLRenderPipelineState]=[:]
     var pipelineRecords:[String:[String:Any]]=[:]
+    var encoderLabels: Set<String> = []
+    func command(_ q:MTLCommandQueue,_ name:String)throws->MTLCommandBuffer{
+        let d=MTLCommandBufferDescriptor();d.errorOptions = .encoderExecutionStatus
+        guard let cb=q.makeCommandBuffer(descriptor:d)else{throw Failure(reason:"command_buffer_unavailable")}
+        cb.label=name;return cb
+    }
+    func mark(_ e:MTLCommandEncoder,_ cb:MTLCommandBuffer,_ role:String){
+        let name=(cb.label ?? "unlabeled")+"/"+role
+        e.label=name;encoderLabels.insert(name)
+    }
     init(_ source:String)throws{
         guard let d=MTLCreateSystemDefaultDevice(),let q=d.makeCommandQueue()else{throw Failure(reason:"UNAVAILABLE_native_Metal")}
         device=d;queue=q
@@ -127,8 +147,22 @@ final class Harness{
     }
     func finish(_ cb:MTLCommandBuffer,_ name:String)throws{
         cb.commit();cb.waitUntilCompleted()
-        commands.append(["name":name,"committed":true,"wait_returned":true,"status":cb.status.rawValue,
-            "completed":cb.status == .completed,"error_present":cb.error != nil])
+        var observation:[String:Any]=["name":name,"committed":true,"wait_returned":true,"status":cb.status.rawValue,
+            "completed":cb.status == .completed,"error_present":cb.error != nil,"error_options":cb.errorOptions.rawValue]
+        if let error=cb.error {
+            let e=error as NSError
+            observation["error_domain"]=String(e.domain.prefix(128));observation["error_code"]=e.code
+            observation["error_description"]=String(decoding:e.localizedDescription.utf8.prefix(2048),as:UTF8.self)
+            if let infos=e.userInfo[MTLCommandBufferEncoderInfoErrorKey] as? [MTLCommandBufferEncoderInfo] {
+                observation["encoder_info_count"]=infos.count;observation["encoder_info_truncated"]=infos.count>16
+                observation["encoder_states"]=infos.prefix(16).map{info -> [String:Any] in
+                    ["label":encoderLabels.contains(info.label) ? info.label : "unrecognized-redacted",
+                     "error_state_raw":info.errorState.rawValue,"error_state":String(String(describing:info.errorState).prefix(64))]
+                }
+            }else{observation["encoder_states_unavailable"]=true}
+            // No other userInfo values, signposts, environment data or memory dumps.
+        }
+        commands.append(observation)
         try flush();try need(cb.status == .completed && cb.error==nil,"native_command_failed")
     }
     func copy(_ b:MTLBlitCommandEncoder,_ t:MTLTexture,_ out:Readback){
@@ -148,6 +182,7 @@ final class Harness{
         let p=MTLRenderPassDescriptor();p.colorAttachments[0].texture=q;p.colorAttachments[0].loadAction = .clear;p.colorAttachments[0].storeAction = .store
         p.stencilAttachment.texture=st;p.stencilAttachment.loadAction = .clear;p.stencilAttachment.storeAction = .store;p.stencilAttachment.clearStencil=checker ? 42 : 43
         guard let e=cb.makeRenderCommandEncoder(descriptor:p)else{throw Failure(reason:"stencil_seed_encoder")}
+        mark(e,cb,"seed-render")
         e.setRenderPipelineState(queryPipeline);e.setDepthStencilState(seedState)
         if checker || ramp{
             for y in 0..<H{for x in 0..<W where ramp  ||  ((x+y)&1)==1{
@@ -162,15 +197,16 @@ final class Harness{
         let p=MTLRenderPassDescriptor();p.colorAttachments[0].texture=q;p.colorAttachments[0].loadAction = .clear;p.colorAttachments[0].storeAction = .store
         p.colorAttachments[0].clearColor=MTLClearColorMake(0,0,0,0);p.stencilAttachment.texture=st;p.stencilAttachment.loadAction = .load;p.stencilAttachment.storeAction = .store
         guard let e=cb.makeRenderCommandEncoder(descriptor:p)else{throw Failure(reason:"stencil_query_encoder")}
+        mark(e,cb,"stencil-query-sweep")
         e.setRenderPipelineState(queryPipeline);e.setDepthStencilState(queryState);bind(e,full,MTLScissorRect(x:0,y:0,width:W,height:H))
         for i in 0..<256{let ref=UInt32(i);var p=SIMD4<UInt32>(ref,0,0,0);e.setStencilReferenceValue(ref);e.setFragmentBytes(&p,length:16,index:0);try draw(e,.triangle,3)}
         e.endEncoding()
     }
     func calibrate()throws{
         let st=try tex(.stencil8),q=try tex(.rgba8Uint),r=try Readback(device,4)
-        guard let cb=queue.makeCommandBuffer()else{throw Failure(reason:"calibration_command")}
+        let cb=try command(queue,"all256-query-calibration")
         try seedStencil(cb,st,q,false,true);try query(cb,st,q)
-        guard let blit=cb.makeBlitCommandEncoder()else{throw Failure(reason:"calibration_readback")};copy(blit,q,r);blit.endEncoding();try finish(cb,"all256-query-calibration")
+        guard let blit=cb.makeBlitCommandEncoder()else{throw Failure(reason:"calibration_readback")};mark(blit,cb,"calibration-readback");copy(blit,q,r);blit.endEncoding();try finish(cb,"all256-query-calibration")
         let p=try r.payload()
         for i in 0..<N{let v=UInt8(i&255);try need(Array(p[i*4..<i*4+4])==[v,255-v,83,255],"all256_query_calibration_failed")}
         try save("query-calibration.bin",try r.raw());report["query_calibration_passed"]=true;try flush()
@@ -198,23 +234,30 @@ final class Harness{
         return p
     }
     func run(_ c:Spec,_ seed:Data)throws{
+        // Fresh mutable resources and queue for every case; device/library/PSOs
+        // remain shared, so a prior device error can still affect later outcomes.
+        guard let caseQueue=device.makeCommandQueue()else{throw Failure(reason:"fresh_case_queue_unavailable")}
+        caseQueue.label="case\(c.id)-fresh-queue"
         let color=try tex(.bgra8Unorm),a=try tex(c.visible ? .rg16Float : .rgba32Float),st=try tex(.stencil8),q=try tex(.rgba8Uint)
         var colors=[color,a];if !c.visible{colors.append(try tex(.rgba32Float))}
         let bpps:[Int]=c.visible ? [4,4,4,4,4] : [4,4,4,16,16,4]
         let outputs=try bpps.map{try Readback(device,$0)}
         let upload=try Readback(device,4);seed.withUnsafeBytes{s in for y in 0..<H{memcpy(upload.buffer.contents().advanced(by:guardBytes+y*upload.pitch),s.baseAddress!.advanced(by:y*W*4),W*4)}}
-        guard let first=queue.makeCommandBuffer(),let up=first.makeBlitCommandEncoder()else{throw Failure(reason:"initial_command")}
+        let first=try command(caseQueue,"case\(c.id)-seed-and-query")
+        guard let up=first.makeBlitCommandEncoder()else{throw Failure(reason:"initial_command")}
+        mark(up,first,"seed-upload")
         up.copy(from:upload.buffer,sourceOffset:guardBytes,sourceBytesPerRow:upload.pitch,sourceBytesPerImage:upload.pitch*H,sourceSize:MTLSize(width:W,height:H,depth:1),to:color,destinationSlice:0,destinationLevel:0,destinationOrigin:MTLOrigin(x:0,y:0,z:0));up.endEncoding()
         try seedStencil(first,st,q,c.checker);try query(first,st,q)
-        guard let initial=first.makeBlitCommandEncoder()else{throw Failure(reason:"initial_capture")};copy(initial,color,outputs[0]);copy(initial,q,outputs[1]);initial.endEncoding()
+        guard let initial=first.makeBlitCommandEncoder()else{throw Failure(reason:"initial_capture")};mark(initial,first,"seed-readback");copy(initial,color,outputs[0]);copy(initial,q,outputs[1]);initial.endEncoding()
         try finish(first,"case\(c.id)-seed-and-query");try need(Data(try upload.payload())==seed,"upload_input_changed")
-        guard let second=queue.makeCommandBuffer()else{throw Failure(reason:"consumer_command")}
+        let second=try command(caseQueue,"case\(c.id)-consumer-and-query")
         let pass=MTLRenderPassDescriptor()
         for(i,t) in colors.enumerated(){pass.colorAttachments[i].texture=t;pass.colorAttachments[i].loadAction=i==0 ? .load : .clear;pass.colorAttachments[i].storeAction = .store;pass.colorAttachments[i].clearColor=MTLClearColorMake(-999,-999,-999,-999)}
         if c.visible{pass.colorAttachments[1].clearColor=MTLClearColorMake(0.25,0.75,0,1)}
         if c.attached{pass.stencilAttachment.texture=st;pass.stencilAttachment.loadAction = .load;pass.stencilAttachment.storeAction = .store}
         let ds=try state(c);let ps=try pipeline(c)
         guard let e=second.makeRenderCommandEncoder(descriptor:pass)else{throw Failure(reason:"consumer_encoder")}
+        mark(e,second,"consumer-strip")
         e.setRenderPipelineState(ps);e.setDepthStencilState(c.attached ? ds.0 : nil);e.setStencilReferenceValue(c.reference)
         let sc=MTLScissorRect(x:3,y:5,width:18,height:15)
         for drawIndex in 0..<c.draws{
@@ -224,6 +267,7 @@ final class Harness{
         }
         e.endEncoding();try query(second,st,q)
         guard let read=second.makeBlitCommandEncoder()else{throw Failure(reason:"final_readback")}
+        mark(read,second,"final-readback")
         for(index,t)in colors.enumerated(){copy(read,t,outputs[index+2])};copy(read,q,outputs.last!)
         read.endEncoding();try finish(second,"case\(c.id)-consumer-and-query")
         var raw=Data();for r in outputs{raw.append(try r.raw())};try need(raw.count==(c.visible ? 43520 : 68608),"case_readback_layout")
@@ -237,7 +281,7 @@ final class Harness{
             "actual_textures":(colors+[st,q]).map{textureInfo($0)},"visible_color_derivative_control":c.visible,
             "color_attachment_formats":colors.map{$0.pixelFormat.rawValue},"color_attachment_write_masks":c.visible ? [15,0] : [15,15,15],
             "no_color2_attachment":pass.colorAttachments[2].texture == nil,"pipeline_descriptor_getters":pipelineRecords[c.pipelineKey]!,"RG16_clear_half_words":c.visible ? [13312,14848] : [],
-            "guards_checked":true,"before_and_after_stencil":"GPU Equal/Keep sweep; no direct stencil-blit assumption"])
+            "fresh_case_resources_and_queue":true,"guards_checked":true,"before_and_after_stencil":"GPU Equal/Keep sweep; no direct stencil-blit assumption"])
         try flush()
     }
 }
@@ -260,14 +304,42 @@ func run()throws{
         "no_device_buffer_fragment_side_effects":true,"shader_depth_output":false,"shader_stencil_output":false,"default_test_mode":"no early attribute, not forced hardware late execution","discard_supported":false,"control_flow_supported":false,
         "per_case_layout":"guarded before BGRA8; before RGBA8Uint stencil query; after BGRA8; RGBA32Float A; RGBA32Float B; after RGBA8Uint query",
         "guard_prefix_suffix":256,"poison_byte":205,"row_alignment":256,"diagnostic_case_bytes":68608,"visible_topology_case_bytes":43520,"visible_topology_cases":3,"model_qualification_not_inferred_from_completion":true] as [String:Any]
-    let h=try Harness(source);try h.calibrate();for c in specs{try h.run(c,seed)}
-    try need(commands.count==27 && observations.count==13 && drawCount<=16000,"completed_work_budget")
+    let h=try Harness(source)
+    report["diagnostic_mode"]="encoderExecutionStatus; fresh per-case mutable resources/queue; no retry or expected-model change"
+    do{try h.calibrate()}catch{report["calibration_failure"]=errorDetails(error);try flush()}
+    for c in specs {
+        let firstCommand=commands.count
+        let priorCommandError=commands.contains{($0["completed"] as? Bool) != true || ($0["error_present"] as? Bool) == true}
+        caseAttempts.append(["id":c.id,"name":c.name,"visible_color_topology":c.visible,
+            "fresh_case_resources_and_queue_requested":true,"prior_command_error":priorCommandError,
+            "context_health":priorCommandError ? "unknown_after_prior_command_error" : "no_prior_command_error_observed",
+            "commands_before":firstCommand,"outcome":"attempting"])
+        try flush()
+        do {
+            try h.run(c,seed)
+            caseAttempts[caseAttempts.count-1]["outcome"]="captured"
+        }catch{
+            let failure:[String:Any]=["id":c.id,"name":c.name,"visible_color_topology":c.visible,
+                "error":errorDetails(error),"commands_before":firstCommand,"commands_after":commands.count,
+                "prior_command_error":priorCommandError,
+                "semantic_failure_inference":priorCommandError ? "unknown_possible_poisoned_device_context" : "not_inferred_from_API_failure"]
+            caseFailures.append(failure);caseAttempts[caseAttempts.count-1]["outcome"]="failed"
+        }
+        caseAttempts[caseAttempts.count-1]["commands_after"]=commands.count
+        try flush()
+    }
+    let allBuffersOK=commands.count==27 && commands.allSatisfy{($0["completed"] as? Bool)==true && ($0["error_present"] as? Bool)==false}
+    let allCasesOK=caseAttempts.count==13 && observations.count==13 && caseFailures.isEmpty
+    report["all13_cases_succeeded"]=allCasesOK;report["all27_command_buffers_succeeded"]=allBuffersOK
+    try flush()
+    try need((report["query_calibration_passed"] as? Bool)==true && allCasesOK && allBuffersOK && drawCount<=16000,"diagnostic_fail_closed_all13_and_all27_required")
     report["status"]="NATIVE_OBSERVATIONS_COMPLETE";try flush()
 }
 var exitCode:Int32=0
 do{try run()}catch{
     exitCode=3
-    if let f=error as? Failure{report["failure"]=f.reason}else{let e=error as NSError;report["failure"]="native_API_error";report["error_domain"]=e.domain;report["error_code"]=e.code}
+    report["top_level_error"]=errorDetails(error)
+    if let f=error as? Failure{report["failure"]=f.reason}else{report["failure"]="native_API_error"}
     report["status"]="FAILED_NOT_PASS";try? flush()
 }
 print("native_observation_exit=\(exitCode) model_qualification_is_separate=true")
