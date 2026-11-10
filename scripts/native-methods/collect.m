@@ -188,19 +188,19 @@ static void collectWindow(NSDictionary *item) {
     if (names[@(p)]) r[@"methods"] = names[@(p)];
     [windows addObject:r];
 }
+static BOOL deletionRoot(NSString *className, NSString *selector) {
+    if ([className isEqualToString:@"PGFIFO"]) {
+        return [selector isEqualToString:@"CmdDeleteObject:stampValue:withPayload:payloadSize:"];
+    }
+    return [className isEqualToString:@"PGRemoteTask"] &&
+           [selector.lowercaseString hasPrefix:@"deleteobject"];
+}
 static BOOL wanted(NSString *className, NSString *selector) {
-    NSString *s = selector.lowercaseString;
-    if (([className isEqualToString:@"PGFIFO"] || [className isEqualToString:@"PGRemoteTask"]) &&
-        ([s containsString:@"synchroniz"] || [s containsString:@"discard"]) &&
-        ([s containsString:@"resource"] || [s containsString:@"child"])) return YES;
-    if ([s isEqualToString:@"features"] || [s isEqualToString:@"devicefeaturelevel"] ||
-        [s isEqualToString:@"capabilities"]) return YES;
+    if (deletionRoot(className, selector)) return YES;
     if ([className isEqualToString:@"_PGDevice"] &&
-        ([selector isEqualToString:@"getUserTaskID:"] || [selector isEqualToString:@"getTaskID:"] ||
-         [s isEqualToString:@"setbinaryversion:"] || [s hasPrefix:@"getdeviceinfo:"] ||
-         [s hasPrefix:@"mmio"] || [s isEqualToString:@"reset"])) return YES;
+        [@[@"getUserTaskID:", @"getTaskID:"] containsObject:selector]) return YES;
     if ([className isEqualToString:@"PGFIFO"] &&
-        [@[@"signalStampValue:", @"faultAtStampValue:", @"faultAtOffset:stampValue:", @"pushStamp:cmdID:", @"processFifo"] containsObject:selector]) return YES;
+        [@[@"signalStampValue:", @"faultAtStampValue:", @"faultAtOffset:stampValue:"] containsObject:selector]) return YES;
     return NO;
 }
 int main(int argc, const char **argv) {
@@ -280,7 +280,7 @@ int main(int argc, const char **argv) {
                     NSString *label = [NSString stringWithFormat:@"%c[%@ %@]", kind ? '+' : '-', cn, selector];
                     if (!names[@(p)]) names[@(p)] = [NSMutableArray array];
                     [names[@(p)] addObject:label];
-                    if ([cn isEqualToString:@"_PGDevice"] || [cn isEqualToString:@"PGFIFO"]) {
+                    if (wanted(cn, selector)) {
                         [catalogue addObject:@{@"class":cn, @"selector":selector, @"vmaddr":hx(p - slide)}];
                     }
                     if (wanted(cn, selector)) {
@@ -292,7 +292,7 @@ int main(int argc, const char **argv) {
                 free(ms);
             }
             if ([cn isEqualToString:@"PGFIFO"] || [cn isEqualToString:@"_PGDevice"] ||
-                [cn isEqualToString:@"PGRemoteTask"] || [cn.lowercaseString containsString:@"feature"]) {
+                [cn isEqualToString:@"PGRemoteTask"]) {
                 unsigned count = 0; Ivar *vs = class_copyIvarList(cls, &count);
                 for (unsigned j = 0; j < count; ++j) {
                     [ivars addObject:@{@"class":cn, @"name":@(ivar_getName(vs[j])), @"type":@(ivar_getTypeEncoding(vs[j])), @"offset":@(ivar_getOffset(vs[j]))}];
@@ -302,17 +302,38 @@ int main(int argc, const char **argv) {
         }
         free(classes);
         for (NSUInteger i = 0; i < queue.count && exportedBytes < byteLimit; ++i) collectWindow(queue[i]);
+        // Collector readiness is not proof of callback semantics; that requires byte review.
+        BOOL handlerFound = NO, remoteFound = NO, completeRoots = YES;
+        NSMutableArray *rootChecks = [NSMutableArray array];
+        for (NSDictionary *method in methods) {
+            if (!deletionRoot(method[@"class"], method[@"selector"])) continue;
+            if ([method[@"class"] isEqualToString:@"PGFIFO"]) handlerFound = YES;
+            else remoteFound = YES;
+            BOOL complete = NO;
+            for (NSDictionary *window in windows) {
+                if ([window[@"vmaddr"] isEqualToString:method[@"vmaddr"]] &&
+                    [window[@"exact_function_start"] boolValue] &&
+                    ![window[@"truncated"] boolValue] && [window[@"length"] unsignedIntegerValue]) {
+                    complete = YES;
+                    break;
+                }
+            }
+            completeRoots = completeRoots && complete;
+            [rootChecks addObject:@{@"method":method, @"complete_window":@(complete)}];
+        }
+        BOOL rootsReady = handlerFound && remoteFound && completeRoots;
         NSMutableDictionary *result = [NSMutableDictionary dictionaryWithDictionary:
             @{@"schema":@"bounded-native-methods-v1", @"image":@(image), @"uuid":uuid,
               @"cputype":@(h->cputype), @"cpusubtype":@(h->cpusubtype), @"slide":hx(slide),
               @"runtime_header":hx((uintptr_t)h), @"segments":segments, @"sections":sections,
               @"function_starts_count":@(starts.count), @"methods":methods, @"ivars":ivars, @"catalogue":catalogue,
               @"windows":windows, @"references":references, @"external_branch_heads":stubs,
+              @"required_deletion_roots":rootChecks, @"required_deletion_roots_complete":@(rootsReady),
               @"exported_code_bytes":@(exportedBytes), @"limits":@{@"code_bytes":@(byteLimit), @"windows":@(windowLimit), @"dependency_depth":@3},
               @"scope":@"Own-process read-only runtime introspection; selected framework methods and bounded dependencies; no service or guest execution"}];
         NSError *error = nil;
         NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:&error];
         if (!json || ![json writeToFile:@(argv[1]) options:NSDataWritingAtomic error:&error]) return 8;
-        return methods.count && windows.count ? 0 : 9;
+        return rootsReady ? 0 : 9;
     }
 }
