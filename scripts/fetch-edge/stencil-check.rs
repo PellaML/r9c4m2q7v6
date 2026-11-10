@@ -6,15 +6,15 @@ const H:usize=32;
 const N:usize=W*H;
 const GUARD:usize=256;
 const POISON:u8=0xcd;
-const HEADER:&str="id\tname\tattached\tcompare\toperation\tearly\tdiscard\tdraws\tcolor_mask\tsplit\tchecker\treference\tread_mask\twrite_mask\tnegative\n";
+const HEADER:&str="id\tname\ttests_enabled\tcompare\toperation\tearly\tdiscard\tdraws\tcolor_mask\tsplit\tchecker\treference\tread_mask\twrite_mask\tnegative\n";
 #[derive(Clone,Debug)]
-struct Case { id:usize,name:&'static str,attached:u32,compare:u32,op:u32,early:u32,discard:u32,draws:u32,mask:u32,split:u32,checker:u32,reference:u32,read:u32,write:u32,negative:u32 }
+struct Case { id:usize,name:&'static str,tests_enabled:u32,compare:u32,op:u32,early:u32,discard:u32,draws:u32,mask:u32,split:u32,checker:u32,reference:u32,read:u32,write:u32,negative:u32 }
 impl Case { fn visible(&self)->bool{self.id>=10} }
 fn cases()->Vec<Case>{
-    let names=["no-stencil-early","always-keep-early","checker-keep-early","checker-replace-early","checker-zero-early","no-stencil-default","always-keep-default","checker-keep-default","checker-replace-default","checker-zero-default","visible-no-stencil-early","visible-always-keep-early","visible-checker-keep-early"];
+    let names=["attached-tests-disabled-early","always-keep-early","checker-keep-early","checker-replace-early","checker-zero-early","attached-tests-disabled-default","always-keep-default","checker-keep-default","checker-replace-default","checker-zero-default","visible-attached-tests-disabled-early","visible-always-keep-early","visible-checker-keep-early"];
     names.into_iter().enumerate().map(|(id,name)|{
         let role=if id>=10{id-10}else{id%5};let checker=u32::from(role>=2);
-        Case{id,name,attached:u32::from(role!=0),compare:u32::from(checker==1),
+        Case{id,name,tests_enabled:u32::from(role!=0),compare:u32::from(checker==1),
             op:if role==3{2}else if role==4{1}else{0},early:u32::from(id<5||id>=10),discard:0,draws:1,mask:15,split:0,checker,
             reference:if checker==1{116}else{117},read:if checker==1{1}else{u32::MAX},
             write:if role>=3{15}else{u32::MAX},negative:0}
@@ -22,7 +22,7 @@ fn cases()->Vec<Case>{
 }
 fn tsv(cs:&[Case])->String{
     let mut out=String::from(HEADER);
-    for c in cs {out.push_str(&format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",c.id,c.name,c.attached,c.compare,c.op,c.early,c.discard,c.draws,c.mask,c.split,c.checker,c.reference,c.read,c.write,c.negative));}
+    for c in cs {out.push_str(&format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",c.id,c.name,c.tests_enabled,c.compare,c.op,c.early,c.discard,c.draws,c.mask,c.split,c.checker,c.reference,c.read,c.write,c.negative));}
     out
 }
 fn masked_rg16()->Vec<u8>{[0x00,0x34,0x00,0x3a].repeat(N)}
@@ -42,7 +42,7 @@ fn primitive(x:usize,y:usize)->usize{
 fn initial_stencil(c:&Case)->Vec<u8>{
     (0..N).map(|i|if c.checker==1{42+(((i%W)+(i/W))&1)as u8}else{43}).collect()
 }
-fn passes(c:&Case,s:u8)->bool{c.attached==0||c.compare==0||((u32::from(s)&c.read)!=(c.reference&c.read))}
+fn passes(c:&Case,s:u8)->bool{c.tests_enabled==0||c.compare==0||((u32::from(s)&c.read)!=(c.reference&c.read))}
 fn update(c:&Case,s:u8)->u8{
     let value=match c.op{0=>u32::from(s),1=>0,2=>c.reference,_=>unreachable!()};
     ((u32::from(s)&!c.write)|(value&c.write))as u8
@@ -64,7 +64,7 @@ fn model(c:&Case,counter:Counter,_reserved:bool)->Model{
             for y in 5..20 {for x in 3..21 {
                 if primitive(x,y)!=prim{continue}
                 let i=y*W+x;let pass=passes(c,m.stencil[i]);
-                if c.attached==1&&pass&&c.early==1{m.stencil[i]=update(c,m.stencil[i]);}
+                if c.tests_enabled==1&&pass&&c.early==1{m.stencil[i]=update(c,m.stencil[i]);}
                 let stores=pass||matches!(counter,Counter::AllQuadStores);
                 if !stores {continue}
                 let prior=f32::from(image[i*4+3])/255.0;
@@ -75,7 +75,7 @@ fn model(c:&Case,counter:Counter,_reserved:bool)->Model{
                 if c.visible(){m.color[i*4]=unorm(fw);m.color[i*4+1]=unorm(0.5+dy);m.color[i*4+2]=unorm(0.5+dx);}
                 else if c.mask==15 {m.color[i*4]=image[i*4];m.color[i*4+1]=image[i*4+1];m.color[i*4+2]=255-image[i*4+2];}
                 if c.mask&1!=0 {m.color[i*4+3]=255-image[i*4+3];}
-                if c.attached==1&&pass&&c.early==0 {m.stencil[i]=update(c,m.stencil[i]);}
+                if c.tests_enabled==1&&pass&&c.early==0 {m.stencil[i]=update(c,m.stencil[i]);}
             }}
         }
     }m
@@ -130,7 +130,7 @@ fn check(root:&Path,wrong:bool)->io::Result<()>{
     let visible_mask=(10..13).all(|i|got[i].a==words(&masked_rg16())&&got[i].b.is_empty());
     let controls=paired&&primitive>0&&rejected>0&&stores>0&&visible_primitive>0&&visible_rejected>0&&visible_mask;
     let pass=failures==0&&controls;
-    let report=format!("{{\"status\":\"{}\",\"native_model_qualification\":{},\"deliberately_wrong_ignore_stencil_model\":{},\"model\":\"pre-DRAW image for all derivative lanes; stores coverage&stencil_pass; ordinary pass operations; no discard\",\"default_means\":\"no early attribute, not forced hardware late execution\",\"rows\":[{}],\"paired_no_stencil_always_keep_equal\":{},\"wrong_per_primitive_differences\":{},\"wrong_zero_rejected_helpers_differences\":{},\"wrong_all_quad_store_color_differences\":{},\"visible_wrong_per_primitive_color_differences\":{},\"visible_wrong_zero_rejected_helpers_color_differences\":{},\"visible_RG16_masked_attachment_unchanged\":{},\"topology_qualification_separate\":true,\"platform_scope\":\"exact native.json OS build/device/compiler only; filenames are not build evidence\"}}\n",if pass{"NATIVE_MODEL_MATCH_WITH_NEGATIVE_WITNESSES"}else{"MODEL_MISMATCH_OR_CONTROL_NOT_DISCRIMINATING"},pass,wrong,rows.join(","),paired,primitive,rejected,stores,visible_primitive,visible_rejected,visible_mask);
+    let report=format!("{{\"status\":\"{}\",\"native_model_qualification\":{},\"deliberately_wrong_ignore_stencil_model\":{},\"model\":\"pre-DRAW image for all derivative lanes; stores coverage&stencil_pass; ordinary pass operations; no discard\",\"default_means\":\"no early attribute, not forced hardware late execution\",\"rows\":[{}],\"paired_disabled_tests_always_keep_equal\":{},\"wrong_per_primitive_differences\":{},\"wrong_zero_rejected_helpers_differences\":{},\"wrong_all_quad_store_color_differences\":{},\"visible_wrong_per_primitive_color_differences\":{},\"visible_wrong_zero_rejected_helpers_color_differences\":{},\"visible_RG16_masked_attachment_unchanged\":{},\"topology_qualification_separate\":true,\"platform_scope\":\"exact native.json OS build/device/compiler only; filenames are not build evidence\"}}\n",if pass{"NATIVE_MODEL_MATCH_WITH_NEGATIVE_WITNESSES"}else{"MODEL_MISMATCH_OR_CONTROL_NOT_DISCRIMINATING"},pass,wrong,rows.join(","),paired,primitive,rejected,stores,visible_primitive,visible_rejected,visible_mask);
     fs::write(root.join(if wrong{"negative-check.json"}else{"model-check.json"}),report)?;
     if !pass{return Err(error(format!("model mismatches={failures}; controls={controls}; native evidence retained; do not broaden qualification")))}
     println!("NATIVE_MODEL_MATCH cases=13 exact_tolerance=0");Ok(())

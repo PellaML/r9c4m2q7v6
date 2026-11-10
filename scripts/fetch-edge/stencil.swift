@@ -13,13 +13,13 @@ let full:[SIMD2<Float>]=[SIMD2(-32,-32),SIMD2(96,-32),SIMD2(-32,96)]
 struct Params{var tag:UInt32;var unused0:UInt32=0;var unused1:UInt32=0;var unused2:UInt32=0}
 struct Spec{
     let id:Int,name:String,v:[UInt32]
-    var attached:Bool{v[0]==1};var comparison:UInt32{v[1]};var operation:UInt32{v[2]}
+    var testsEnabled:Bool{v[0]==1};var comparison:UInt32{v[1]};var operation:UInt32{v[2]}
     var early:Bool{v[3]==1};var discard:UInt32{v[4]};var draws:Int{Int(v[5])}
     var colorMask:UInt32{v[6]};var split:Bool{v[7]==1};var checker:Bool{v[8]==1}
     var reference:UInt32{v[9]};var readMask:UInt32{v[10]};var writeMask:UInt32{v[11]}
     var negative:UInt32{v[12]}
     var visible:Bool{id>=10}
-    var pipelineKey:String{"\(early)-\(attached)-\(colorMask)-\(visible)"}
+    var pipelineKey:String{"\(early)-\(testsEnabled)-\(colorMask)-\(visible)"}
 }
 var report:[String:Any]=["schema":1,"status":"FAILED_NOT_PASS","native_observation_only":true]
 var commands:[[String:Any]]=[]
@@ -215,14 +215,14 @@ final class Harness{
         let f=MTLStencilDescriptor();f.stencilCompareFunction=c.comparison==0 ? .always : .notEqual
         f.stencilFailureOperation = .keep;f.depthFailureOperation = .keep;f.depthStencilPassOperation=c.operation==0 ? .keep : c.operation==1 ? .zero : .replace
         f.readMask=c.readMask;f.writeMask=c.writeMask
-        let d=MTLDepthStencilDescriptor();d.depthCompareFunction = .always;d.isDepthWriteEnabled=false;d.frontFaceStencil=f;d.backFaceStencil=f
+        let d=MTLDepthStencilDescriptor();d.depthCompareFunction = .always;d.isDepthWriteEnabled=false;d.frontFaceStencil=c.testsEnabled ? f : nil;d.backFaceStencil=c.testsEnabled ? f : nil
         guard let s=device.makeDepthStencilState(descriptor:d)else{throw Failure(reason:"consumer_stencil_state")};return(s,d)
     }
     func pipeline(_ c:Spec)throws->MTLRenderPipelineState{
         let key=c.pipelineKey;if let p=pipelines[key]{return p}
         let d=MTLRenderPipelineDescriptor();d.vertexFunction=library.makeFunction(name:"stencil_vertex");d.fragmentFunction=library.makeFunction(name:c.visible ? "stencil_visible_early" : c.early ? "stencil_early" : "stencil_default")
         d.rasterSampleCount=1;d.isAlphaToCoverageEnabled=false;d.isAlphaToOneEnabled=false
-        d.stencilAttachmentPixelFormat=c.attached ? .stencil8 : .invalid;d.depthAttachmentPixelFormat = .invalid
+        d.stencilAttachmentPixelFormat = .stencil8;d.depthAttachmentPixelFormat = .invalid
         let formats:[MTLPixelFormat]=c.visible ? [.bgra8Unorm,.rg16Float] : [.bgra8Unorm,.rgba32Float,.rgba32Float]
         for (i,f) in formats.enumerated(){d.colorAttachments[i].pixelFormat=f;d.colorAttachments[i].isBlendingEnabled=false;d.colorAttachments[i].writeMask = c.visible && i==1 ? [] : .all}
         if c.visible{try need(d.colorAttachments[1].writeMask.rawValue==0 && d.colorAttachments[2].pixelFormat == .invalid,"visible_topology_descriptor")}
@@ -254,11 +254,11 @@ final class Harness{
         let pass=MTLRenderPassDescriptor()
         for(i,t) in colors.enumerated(){pass.colorAttachments[i].texture=t;pass.colorAttachments[i].loadAction=i==0 ? .load : .clear;pass.colorAttachments[i].storeAction = .store;pass.colorAttachments[i].clearColor=MTLClearColorMake(-999,-999,-999,-999)}
         if c.visible{pass.colorAttachments[1].clearColor=MTLClearColorMake(0.25,0.75,0,1)}
-        if c.attached{pass.stencilAttachment.texture=st;pass.stencilAttachment.loadAction = .load;pass.stencilAttachment.storeAction = .store}
+        pass.stencilAttachment.texture=st;pass.stencilAttachment.loadAction = .load;pass.stencilAttachment.storeAction = .store
         let ds=try state(c);let ps=try pipeline(c)
         guard let e=second.makeRenderCommandEncoder(descriptor:pass)else{throw Failure(reason:"consumer_encoder")}
         mark(e,second,"consumer-strip")
-        e.setRenderPipelineState(ps);e.setDepthStencilState(c.attached ? ds.0 : nil);e.setStencilReferenceValue(c.reference)
+        e.setRenderPipelineState(ps);e.setDepthStencilState(ds.0);e.setStencilReferenceValue(c.reference)
         let sc=MTLScissorRect(x:3,y:5,width:18,height:15)
         for drawIndex in 0..<c.draws{
             var params=Params(tag:UInt32(drawIndex+1))
@@ -273,7 +273,7 @@ final class Harness{
         var raw=Data();for r in outputs{raw.append(try r.raw())};try need(raw.count==(c.visible ? 43520 : 68608),"case_readback_layout")
         let name=String(format:"case%02d.bin",c.id);try save(name,raw)
         observations.append(["id":c.id,"name":c.name,"file":name,"bytes":raw.count,"sha256":sha(raw),"negative_control":c.negative,
-            "consumer_stencil_attached":c.attached,"state_descriptor":depthInfo(ds.1),"reference_front_back":c.reference,
+            "consumer_stencil_attached":true,"stencil_tests_enabled":c.testsEnabled,"explicit_depth_stencil_state_bound":true,"state_descriptor":depthInfo(ds.1),"reference_front_back":c.reference,
             "fragment":c.visible ? "stencil_visible_early" : c.early ? "stencil_early" : "stencil_default","early_attribute_requested":c.early,"discard_even_x":c.discard,
             "logical_strip_draws":c.draws,"split_triangle_calls":c.split,"same_consumer_encoder":true,
             "physical_consumer_draw_calls":c.split ? 2 : c.draws,"color0_write_mask":c.colorMask,"all_MRT_blending":false,
@@ -303,7 +303,7 @@ func run()throws{
     report["contract"]=["width":32,"height":32,"case_count":13,"positive_cases":13,"negative_controls":"wrong expected model only; no extra native cases","framebuffer_input":"half4 color(0)",
         "no_device_buffer_fragment_side_effects":true,"shader_depth_output":false,"shader_stencil_output":false,"default_test_mode":"no early attribute, not forced hardware late execution","discard_supported":false,"control_flow_supported":false,
         "per_case_layout":"guarded before BGRA8; before RGBA8Uint stencil query; after BGRA8; RGBA32Float A; RGBA32Float B; after RGBA8Uint query",
-        "guard_prefix_suffix":256,"poison_byte":205,"row_alignment":256,"diagnostic_case_bytes":68608,"visible_topology_case_bytes":43520,"visible_topology_cases":3,"model_qualification_not_inferred_from_completion":true] as [String:Any]
+        "guard_prefix_suffix":256,"poison_byte":205,"row_alignment":256,"diagnostic_case_bytes":68608,"visible_topology_case_bytes":43520,"visible_topology_cases":3,"all_cases_stencil_attachment":true,"reference_control_family":"attached-tests-disabled","model_qualification_not_inferred_from_completion":true] as [String:Any]
     let h=try Harness(source)
     report["diagnostic_mode"]="encoderExecutionStatus; fresh per-case mutable resources/queue; no retry or expected-model change"
     do{try h.calibrate()}catch{report["calibration_failure"]=errorDetails(error);try flush()}

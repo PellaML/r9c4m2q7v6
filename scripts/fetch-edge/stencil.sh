@@ -85,7 +85,11 @@ for i,c in enumerate(j['cases']):
     assert c['logical_strip_draws']==c['physical_consumer_draw_calls']==1 and not c['split_triangle_calls'] and c['discard_even_x']==0
     assert c['color0_write_mask']==15 and c['same_consumer_encoder'] and not c['all_MRT_blending']
     d=c['state_descriptor'];assert d['depth_compare']==7 and d['depth_write'] is False and d['front']==d['back']
-    assert d['front']['fail']==d['front']['depth_fail']==0
+    assert c['consumer_stencil_attached'] is True and c['explicit_depth_stencil_state_bound'] is True
+    enabled=i not in (0,5,10)
+    assert c['stencil_tests_enabled'] is enabled
+    if enabled:assert d['front']['fail']==d['front']['depth_fail']==0
+    else:assert d['front'] is None and d['back'] is None
     visible=i>=10
     assert c['visible_color_derivative_control'] is visible and c['no_color2_attachment'] is visible
     assert c['color_attachment_formats']==([80,65] if visible else [80,125,125])
@@ -94,7 +98,7 @@ for i,c in enumerate(j['cases']):
     assert pd['formats0to2']==([80,65,0] if visible else [80,125,125])
     assert pd['write_masks0to2'][:2]==([15,0] if visible else [15,15])
     assert pd['depth_format']==0 and pd['samples']==1
-    assert pd['stencil_format']==(0 if i in (0,5,10) else 253)
+    assert pd['stencil_format']==253
     if visible:assert pd['fragment']=='stencil_visible_early'
     assert c['RG16_clear_half_words']==([0x3400,0x3a00] if visible else [])
     assert [t['format'] for t in c['actual_textures']]==([80,65,253,73] if visible else [80,125,125,253,73])
