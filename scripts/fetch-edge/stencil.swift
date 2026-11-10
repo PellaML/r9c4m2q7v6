@@ -82,7 +82,7 @@ func depthInfo(_ d:MTLDepthStencilDescriptor)->[String:Any]{
 func textureInfo(_ t:MTLTexture)->[String:Any]{
     ["format":t.pixelFormat.rawValue,"width":t.width,"height":t.height,"samples":t.sampleCount,
      "mips":t.mipmapLevelCount,"array_length":t.arrayLength,"storage":t.storageMode.rawValue,
-     "usage":t.usage.rawValue,"type":t.textureType.rawValue,"framebuffer_only":t.framebufferOnly]
+     "usage":t.usage.rawValue,"type":t.textureType.rawValue,"framebuffer_only":t.isFramebufferOnly]
 }
 final class Harness{
     let device:MTLDevice,queue:MTLCommandQueue,library:MTLLibrary
@@ -122,7 +122,7 @@ final class Harness{
         let desc=MTLTextureDescriptor.texture2DDescriptor(pixelFormat:f,width:W,height:H,mipmapped:false)
         desc.storageMode = .private;desc.usage = .renderTarget
         guard let t=device.makeTexture(descriptor:desc)else{throw Failure(reason:"texture_allocation")}
-        try need(t.width==W && t.height==H && t.pixelFormat==f && t.sampleCount==1 && t.mipmapLevelCount==1 && t.arrayLength==1 && t.storageMode == .private && t.usage == .renderTarget  &&  !t.framebufferOnly,"actual_texture_contract")
+        try need(t.width==W && t.height==H && t.pixelFormat==f && t.sampleCount==1 && t.mipmapLevelCount==1 && t.arrayLength==1 && t.storageMode == .private && t.usage == .renderTarget  &&  !t.isFramebufferOnly,"actual_texture_contract")
         return t
     }
     func finish(_ cb:MTLCommandBuffer,_ name:String)throws{
@@ -185,7 +185,7 @@ final class Harness{
     func pipeline(_ c:Spec)throws->MTLRenderPipelineState{
         let key=c.pipelineKey;if let p=pipelines[key]{return p}
         let d=MTLRenderPipelineDescriptor();d.vertexFunction=library.makeFunction(name:"stencil_vertex");d.fragmentFunction=library.makeFunction(name:c.visible ? "stencil_visible_early" : c.early ? "stencil_early" : "stencil_default")
-        d.rasterSampleCount=1;d.alphaToCoverageEnabled=false;d.alphaToOneEnabled=false
+        d.rasterSampleCount=1;d.isAlphaToCoverageEnabled=false;d.isAlphaToOneEnabled=false
         d.stencilAttachmentPixelFormat=c.attached ? .stencil8 : .invalid;d.depthAttachmentPixelFormat = .invalid
         let formats:[MTLPixelFormat]=c.visible ? [.bgra8Unorm,.rg16Float] : [.bgra8Unorm,.rgba32Float,.rgba32Float]
         for (i,f) in formats.enumerated(){d.colorAttachments[i].pixelFormat=f;d.colorAttachments[i].isBlendingEnabled=false;d.colorAttachments[i].writeMask = c.visible && i==1 ? [] : .all}
