@@ -747,8 +747,14 @@ fn validate_case(raw: &[u8], id: usize, c: &Case, snapshots: &[Vec<u16>]) -> Res
             u64::from(widen(fw).to_bits() != r[16]),
         );
         if strict_quad(d, pixel) && d.mode == 1 && finite(fw) && fw == imm {
-            stats.add("forward_refresh_witnesses", u64::from(imm != low(r[9])));
-            stats.add("reverse_refresh_witnesses", u64::from(imm != high(r[9])));
+            stats.add(
+                "forward_refresh_witnesses",
+                u64::from(primitive == 1 && imm != low(r[9])),
+            );
+            stats.add(
+                "reverse_refresh_witnesses",
+                u64::from(primitive == 0 && imm != high(r[9])),
+            );
             stats.add("postdraw_live_witnesses", u64::from(imm != low(r[10])));
         }
         if finite(fw) && fw == imm {

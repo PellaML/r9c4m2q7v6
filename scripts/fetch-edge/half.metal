@@ -52,8 +52,10 @@ fragment Output half_fetch(Vertex v [[stage_in]], half4 prior [[color(0)]],
     int side = p.diagonal == 0u ? xx*int(p.rh) + yy*int(p.rw) - 2*int(p.rw*p.rh)
                                : yy*int(p.rw) - xx*int(p.rh);
     bool visible = rect && scissor && p.mode != 0u;
-    half forward = select(s, marker, visible && primitive == 1u && side <= 0);
-    half reverse = select(s, marker, visible && primitive == 0u && side > 0);
+    // Evaluate each spatial candidate without assuming helper-lane primitive identity.
+    // The host selects the appropriate model only on observed covered primitives.
+    half forward = select(s, marker, visible && side <= 0);
+    half reverse = select(s, marker, visible && side > 0);
     half live = select(s, marker, visible);
     half scissorMasked = select(half(0), s, scissor);
     half rectangleMasked = select(half(0), s, rect);
