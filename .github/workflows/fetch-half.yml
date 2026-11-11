@@ -1,0 +1,55 @@
+name: Bounded scalar half framebuffer-fetch observations
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        description: Exact main-reviewed public source commit
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: bounded-half-fetch
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'PellaML/r9c4m2q7v6' && github.ref == 'refs/heads/research/probe' && github.run_attempt == '1' && github.sha == inputs.expected_head
+    runs-on: macos-26
+    timeout-minutes: 12
+    env:
+      EXPECTED_HEAD: ${{ inputs.expected_head }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Public runner and compiler identity
+        shell: bash
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+          rustc -Vv
+      - name: One finite native batch
+        timeout-minutes: 7
+        shell: bash
+        run: bash scripts/fetch-edge/half.sh out-half-fetch
+      - name: Bound and seal allowlisted observations or partial failure
+        if: always()
+        id: bounds
+        shell: bash
+        run: |
+          bash scripts/fetch-edge/half.sh --seal-artifacts out-half-fetch
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Verify completed acquisition against the reviewed source and seal
+        if: ${{ success() && steps.bounds.outputs.bounded == 'true' }}
+        shell: bash
+        run: out-half-fetch/build/check verify out-half-fetch/results "$EXPECTED_HEAD" "$PWD"
+      - name: Retain only bounded synthetic results
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: scalar-half-fetch-observations
+          retention-days: 3
+          if-no-files-found: error
+          path: out-half-fetch/results/
