@@ -38,7 +38,7 @@ fragment Output half_fetch(Vertex v [[stage_in]], half4 prior [[color(0)]],
     half separate = half(abs(dx) + abs(dy));
     half late = half(half(fw + half(0.25h)) * half(0.5h));
     half marker = replacement(uint(x), uint(y), p);
-    half oa = select(h, marker, p.mode != 0u);
+    half oa = select(prior.a, marker, p.mode != 0u);
     Output out = {half4(late, half(0), half(1), oa), half2(fw, late)};
 
     // These are native evaluations of explicitly MODELED operands, not reads of
