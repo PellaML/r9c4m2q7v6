@@ -1,0 +1,56 @@
+name: Bounded generic BGRA buffer render storage
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        description: Exact Main-reviewed public source commit
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: bounded-bgra-buffer
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'PellaML/r9c4m2q7v6' && github.ref == 'refs/heads/research/probe' && github.run_attempt == '1' && github.sha == inputs.expected_head
+    runs-on: macos-26
+    timeout-minutes: 12
+    env:
+      EXPECTED_HEAD: ${{ inputs.expected_head }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.expected_head }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: One bounded native batch
+        id: acquire
+        timeout-minutes: 7
+        shell: bash
+        run: |
+          [[ ! -e out-bgra-buffer && ! -L out-bgra-buffer ]] || exit 64
+          echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          bash scripts/bgra-buffer/run.sh out-bgra-buffer
+      - name: Seal only exact allowlisted bounded results or partial failure
+        if: ${{ always() && steps.acquire.outputs.fresh == 'true' }}
+        id: bounds
+        shell: bash
+        run: |
+          bash scripts/bgra-buffer/run.sh --seal-artifacts out-bgra-buffer
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - name: Final source binding and seal guard; replay complete acquisition checks
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        id: final_guard
+        shell: bash
+        run: |
+          out-bgra-buffer/build/check upload-guard out-bgra-buffer/results "$EXPECTED_HEAD" "$PWD"
+          echo 'safe=true' >> "$GITHUB_OUTPUT"
+      - name: Retain bounded generic observations only
+        if: ${{ always() && steps.final_guard.outputs.safe == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: bgra-buffer-observations
+          retention-days: 3
+          if-no-files-found: error
+          path: out-bgra-buffer/results/
