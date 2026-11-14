@@ -1,0 +1,73 @@
+name: Bounded RGBA16Float native observations
+run-name: RGBA16Float observations ${{ inputs.reviewed_commit }}
+on:
+  workflow_dispatch:
+    inputs:
+      main_reviewed:
+        description: Main reviewed the exact six-file generic packet and commit
+        type: boolean
+        required: true
+        default: false
+      free_runners_confirmed:
+        description: Main verified both labels are free standard GitHub-hosted runners for this public repo
+        type: boolean
+        required: true
+        default: false
+      reviewed_commit:
+        description: Full reviewed commit SHA equal to the run commit
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: bounded-rgba16-union
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && inputs.main_reviewed == true && inputs.free_runners_confirmed == true && inputs.reviewed_commit == github.sha && github.repository == 'PellaML/r9c4m2q7v6' && github.event.repository.private == false && github.ref == 'refs/heads/research/probe' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - label: macos-26
+            build: 25G332
+          - label: xcode-27
+            build: 26A434
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.reviewed_commit }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: One finite native batch with both return widths and math modes
+        id: observe
+        timeout-minutes: 6
+        env:
+          RUNNER_LABEL: ${{ matrix.label }}
+          EXPECTED_OS_BUILD: ${{ matrix.build }}
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+          FREE_RUNNERS_CONFIRMED: ${{ inputs.free_runners_confirmed }}
+        shell: bash
+        run: |
+          [[ ! -e out-rgba16-union && ! -L out-rgba16-union ]] || exit 2
+          echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          bash scripts/rgba16-union/run.sh
+      - name: Verify bounded generic results or partial failure evidence
+        id: bounds
+        if: ${{ always() && steps.observe.outputs.fresh == 'true' }}
+        shell: bash
+        run: |
+          bash scripts/rgba16-union/run.sh verify
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        with:
+          name: rgba16-union-${{ matrix.label }}-${{ matrix.build }}-both-modes
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            out-rgba16-union/sha256.txt
+            out-rgba16-union/results/
