@@ -100,7 +100,7 @@ int main(int argc, const char *argv[]) {
             NSError *error = nil;
             id<MTLLibrary> library = [device newLibraryWithSource:source options:options error:&error];
             if (!library || error) { failure(meta, "compile", error); return 24; }
-            field(meta, @"library_type", @(library.libraryType));
+            field(meta, @"library_type", @(library.type));
             id<MTLCommandQueue> queue = [device newCommandQueue];
             const NSUInteger guard = 64, body = count * 32 * 4, total = body + guard * 2;
             id<MTLBuffer> values = [device newBufferWithBytes:input.bytes length:input.length
