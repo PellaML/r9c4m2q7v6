@@ -1,0 +1,113 @@
+name: Bounded floating-point dot observations
+run-name: Dot observations ${{ inputs.reviewed_commit }}
+on:
+  workflow_dispatch:
+    inputs:
+      main_reviewed:
+        description: Exact generic validation files and commit reviewed
+        type: boolean
+        required: true
+        default: false
+      free_runners_confirmed:
+        description: Standard public runner eligibility reviewed
+        type: boolean
+        required: true
+        default: false
+      reviewed_commit:
+        description: Full reviewed commit equal to the run commit
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: bounded-native-dot
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && inputs.main_reviewed == true && inputs.free_runners_confirmed == true && inputs.reviewed_commit == github.sha && github.repository == 'PellaML/r9c4m2q7v6' && github.event.repository.private == false && github.ref == 'refs/heads/research/probe' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - label: macos-26
+            build: 25G332
+          - label: xcode-27
+            build: 26A434
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.reviewed_commit }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Finite native batch
+        id: observe
+        timeout-minutes: 6
+        env:
+          EXPECTED_BUILD: ${{ matrix.build }}
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          [[ "$(sw_vers -buildVersion)" == "$EXPECTED_BUILD" ]]
+          [[ "$(git rev-parse HEAD)" == "$REVIEWED_COMMIT" && "$GITHUB_SHA" == "$REVIEWED_COMMIT" ]]
+          [[ ! -e out-native-dot && ! -L out-native-dot ]]
+          echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          if VALIDATION_REVIEWED=1 bash scripts/native-dot/run.sh out-native-dot; then
+            true
+          else
+            code=$?
+            # Only diagnostics from the generic public validation sources.
+            for file in out-native-dot/.build/*.log out-native-dot/.build/*.stderr; do
+              [[ -f "$file" ]] || continue
+              tail -n 80 "$file" | sed "s|$GITHUB_WORKSPACE|/validation|g"
+            done
+            exit "$code"
+          fi
+      - name: Bound generic results only
+        id: bounds
+        if: ${{ always() && steps.observe.outputs.fresh == 'true' }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,re,shutil,stat
+          source=Path('out-native-dot');out=Path('publish-native-dot')
+          assert source.is_dir() and not source.is_symlink() and not out.exists()
+          roots={'source.sha256','toolchain.tsv','parser-tests.txt','inputs.bin','cases.tsv','check-summary.tsv','source-verified.txt','exit.tsv','artifacts.sha256'}
+          reports={'observations.tsv','composition.tsv','differences.tsv','summary.tsv'}
+          allowed=[];total=0
+          for base,dirs,files in os.walk(source,followlinks=False):
+              for name in dirs: assert not (Path(base)/name).is_symlink()
+              dirs[:]=[name for name in dirs if name!='.build']
+              for name in files:
+                  path=Path(base)/name;relative=path.relative_to(source);parts=relative.parts
+                  assert not path.is_symlink() and stat.S_ISREG(path.stat().st_mode)
+                  ok=len(parts)==1 and name in roots
+                  ok=ok or len(parts)==2 and parts[0]=='report' and name in reports
+                  if len(parts)==2 and re.fullmatch(r'(false|true|default)-b[01]',parts[0]):
+                      ok=name in {'metadata.tsv','commands.tsv','loaded-source.metal','loaded-input.bin'} or bool(re.fullmatch(r'(dot[234]|add[234]|noop|compose_trace|compose_sink)-[012]\.bin',name))
+                  assert ok,relative
+                  size=path.stat().st_size;assert size<=4*1024**2;total+=size;assert total<=8*1024**2
+                  allowed.append((path,relative,size))
+          assert 0<len(allowed)<256
+          out.mkdir()
+          pins={}
+          for path,relative,size in sorted(allowed):
+              target=out/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(path,target)
+              body=target.read_bytes();assert len(body)==size
+              pins[relative.as_posix()]={'bytes':size,'sha256':hashlib.sha256(body).hexdigest()}
+          receipt={'schema':'generic-native-export-v1','reviewed_commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'files':pins,'bytes':total,'native_or_model_qualification_claimed':False}
+          (out/'EXPORT.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          PY
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        with:
+          name: native-dot-${{ matrix.label }}-${{ matrix.build }}
+          retention-days: 3
+          if-no-files-found: error
+          path: publish-native-dot/
