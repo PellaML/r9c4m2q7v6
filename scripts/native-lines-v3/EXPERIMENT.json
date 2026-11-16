@@ -1,0 +1,156 @@
+{
+  "baseline_cases_preserved": 66,
+  "budgets": {
+    "batch_seconds": 120,
+    "build_tree_limit_bytes_exclusive": 100663296,
+    "cargo_jobs": 1,
+    "export_limit_bytes_exclusive": 50331648,
+    "native_process_seconds": 150,
+    "raw_bytes_per_build": 33771520,
+    "raw_limit_bytes_exclusive": 37748736,
+    "runner_matrix_max_parallel": 2,
+    "rust_test_threads": 1
+  },
+  "case_limit_inclusive": 512,
+  "comparisons": {
+    "diagnostic_only": "All new reversal, exact45 phase, D4 symmetry, starting-fraction, adjacent-f32, near45 major-axis, short/zero and window/direct-clip comparisons. No expected line bitmap, coverage count, tie choice, corner ownership or snapping law.",
+    "gating": "Unchanged original 66 baseline checks; all native receipts, guards, complements, color preservation and both layouts; two identical-input repeats; two direct/indexed equivalents; four reviewed exact dyadic baseline window/direct-clip controls; reviewed direct-clip Keep empty and wrong equality rejected."
+  },
+  "coordinate_inputs": "Deterministic fixed public seeds, exact dyadic arithmetic and adjacent binary32 steps only. No RNG, external geometry/input file, captured/private coordinates, packets, libraries or raster kernel.",
+  "coverage_design": {
+    "adjacent_clip_phase": "At all five phase anchors, step both direct-clip y values up/down by one f32 ULP; equal exponents preserve exact45. These ideal viewport values need not both be representable as window f32 inputs.",
+    "adjacent_window_phase": "At +/-0.5, move both endpoint y values by one adjacent-f32 step of the far window endpoint. This exact common translation preserves 45 degrees; the near endpoint need not move by one ULP.",
+    "companions": "Every new nominal-window pair has forward/reverse direct-clip companions. Exact dyadic input round trips are host-checked; shader/GPU arithmetic remains unobserved. Only the four already-reviewed baseline exact dyadic controls gate path equality.",
+    "long_seed": "(4+f,4+f+phase) to (27+f,27+f+phase); f=0.5 for full phase/D4 grids",
+    "major_tie_bracket": "At phase +0.5, independently step either x/y of either endpoint to next_up/next_down f32, both directions. These are explicitly near45, not exact45; staged projection may erase some steps.",
+    "phase_anchors": [
+      0,
+      -0.25,
+      0.25,
+      -0.5,
+      0.5
+    ],
+    "phase_neighbor_offsets": [
+      0,
+      -0.00390625,
+      0.00390625,
+      -0.001953125,
+      0.001953125,
+      -0.000244140625,
+      0.000244140625
+    ],
+    "short_direct_clip": "Separate nonzero pair from one direct clip ULP on each axis, compared diagnostically against zero and CPU-reference collapse. No projected-length or snapping equivalence assumed.",
+    "short_seed": "(3,3.5) to (3+length,3.5+length), both directions; lengths 0, next_up(3)-3, 1/4096, 1/512, 1/256, 0.5.",
+    "starting_fraction_subset": "Additional fractions use phase 0 and +/-0.5, both directions; f=0.5 is reused from full sweep.",
+    "starting_fractions": [
+      0.125,
+      0.25,
+      0.5,
+      0.875
+    ],
+    "symmetries": "All eight D4 transforms at all five anchors, both endpoint directions; bit0 swaps xy, bit1 reflects x about 16, bit2 reflects y about 16."
+  },
+  "expected_cases": 485,
+  "expected_measurements": 970,
+  "families": [
+    {
+      "count": 66,
+      "family": "baseline_66"
+    },
+    {
+      "count": 20,
+      "family": "diagonal_clip_ulp"
+    },
+    {
+      "count": 8,
+      "family": "diagonal_common_ulp_direct_clip"
+    },
+    {
+      "count": 8,
+      "family": "diagonal_common_ulp_window"
+    },
+    {
+      "count": 16,
+      "family": "diagonal_major_neighbor_direct_clip"
+    },
+    {
+      "count": 16,
+      "family": "diagonal_major_neighbor_window"
+    },
+    {
+      "count": 70,
+      "family": "diagonal_phase_direct_clip"
+    },
+    {
+      "count": 70,
+      "family": "diagonal_phase_window"
+    },
+    {
+      "count": 2,
+      "family": "diagonal_short_clip_ulp"
+    },
+    {
+      "count": 12,
+      "family": "diagonal_short_direct_clip"
+    },
+    {
+      "count": 12,
+      "family": "diagonal_short_window"
+    },
+    {
+      "count": 18,
+      "family": "diagonal_start_fraction_direct_clip"
+    },
+    {
+      "count": 18,
+      "family": "diagonal_start_fraction_window"
+    },
+    {
+      "count": 70,
+      "family": "diagonal_symmetry_direct_clip"
+    },
+    {
+      "count": 70,
+      "family": "diagonal_symmetry_window"
+    },
+    {
+      "count": 4,
+      "family": "direct_clip_exact_control"
+    },
+    {
+      "count": 1,
+      "family": "direct_clip_keep_control"
+    },
+    {
+      "count": 2,
+      "family": "indexed_precision_control"
+    },
+    {
+      "count": 2,
+      "family": "repeatability_control"
+    }
+  ],
+  "outputs": {
+    "diagnostics.jsonl": "Actual native mask differences and XOR rows by case pair; UNOBSERVED when either valid readback is missing. CPU-reference bit comparison is separately labeled non-native.",
+    "generator.json": "Family IDs, fixed deterministic recipes, budgets and non-gating comparison plan; no RNG seed or raster model.",
+    "inputs.json": "Exact input binary32 bits plus explicitly labeled CPU staged projection references or direct clip input bits.",
+    "unchanged_native_payload": "Both layouts retain every raw guarded shared-buffer byte, complementary query masks, color-before/after planes and command completion/error receipts."
+  },
+  "position_modes": {
+    "0": "Existing reviewed nominal-window MSL expression, unchanged. Rust records staged binary32 arithmetic as a CPU reference, never native vertex readback.",
+    "1": "Unchanged reviewed tiny vertex entry loads direct clip xy binary32 values with z=0.5,w=1. No window arithmetic or instance offsets. Identity expression is not instrumented vertex readback."
+  },
+  "projection_interpretation": "Do not equate nominal window coordinates with actual hardware postprojection positions. CPU reference clip bits may differ from GPU evaluation/contraction despite fastMathEnabled=NO. Direct-clip companions and differing viewport dimensions are non-gating measurements of that distinction.",
+  "public_file_policy": "No README or markdown files; exact source and output allowlists only.",
+  "qualification_scope": "Finite native observations only; line_coverage_rule remains UNKNOWN and implementation_qualified remains false. No-GPU/unsupported/wrong-device/incomplete/failing run is UNQUALIFIED, never a skip/pass.",
+  "remote_actions": "This source is separately reviewed by Main. Only the generic allowlist is eligible for the authorized public validation repository.",
+  "review_commands": [
+    "python3 review.py verify-sources",
+    "cargo test --release --offline --locked --jobs 1 -- --test-threads=1",
+    "VALIDATION_REVIEWED=1 bash run.sh NEW_OUTPUT_DIRECTORY",
+    "python3 review.py export OUTPUT_DIRECTORY NEW_BOUNDED_DIRECTORY"
+  ],
+  "schema": "generic-native-lines-extension-plan-v3",
+  "state": "PREPARED_FOR_MAIN_PRIVACY_REVIEW_NOT_PUBLICATION_AUTHORIZATION",
+  "viewports": "All new inputs use 32x32 full viewport/scissor with consumed positions strictly inside (0,32). Original 66 retain their reviewed viewports/scissors/clipping, including the 16x16 inset."
+}
