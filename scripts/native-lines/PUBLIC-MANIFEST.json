@@ -1,0 +1,108 @@
+{
+  "files": {
+    ".gitignore": {
+      "bytes": 55,
+      "classification": "build_only",
+      "sha256": "495f245c9276ea77a3bccaef773be841dd6241f07afb37b3b490968cd43e2e37"
+    },
+    "Cargo.lock": {
+      "bytes": 164,
+      "classification": "build_only",
+      "sha256": "05d0cbc4eca9b57144791117e115183347de529b2d66e7d2aed34854ac4b6e8d"
+    },
+    "Cargo.toml": {
+      "bytes": 287,
+      "classification": "build_only",
+      "sha256": "36c94af5119f5d1d71047d733398e79de58b307055584f5ac63b96a114f7f064"
+    },
+    "build.rs": {
+      "bytes": 3570,
+      "classification": "build_only",
+      "sha256": "bf0bce1ef704b148edd3ded4412fbb71d90ac92530d4fa6112865dca4b6c18a5"
+    },
+    "native-lines.workflow.yml.template": {
+      "bytes": 3251,
+      "classification": "manual_review_and_bounded_runner",
+      "sha256": "5fe181db35f175ae03d904f13650b21f13db9d2507907ad1b2153607d69e3495"
+    },
+    "native/metal_probe.h": {
+      "bytes": 1594,
+      "classification": "public_api_shim",
+      "sha256": "38c3a1669c7f2690fd817fab364af6187dec72e7e4025a41ee98ad80b639ec8f"
+    },
+    "native/metal_probe.m": {
+      "bytes": 18532,
+      "classification": "public_api_shim",
+      "sha256": "334139d9c81a2e2236549c877bc8037fc73acad59c55ca073f598e9c902ca9e4"
+    },
+    "native/probe.metal": {
+      "bytes": 1051,
+      "classification": "authored_generic_msl",
+      "sha256": "2cbc206959d60180b03fdc0ad64afa957def4c8a820c36468503d2b4beb71a44"
+    },
+    "review.py": {
+      "bytes": 12002,
+      "classification": "manual_review_and_bounded_runner",
+      "sha256": "d7e575fc340012c2fe02f401eea6f37cef4a919870025c59c581322d2e3ab27e"
+    },
+    "run.sh": {
+      "bytes": 178,
+      "classification": "manual_review_and_bounded_runner",
+      "sha256": "34e7a24fb20ef9aff8a52dda785c6b4bcd5f9a0d0645f6e6c1d35e332ee0d001"
+    },
+    "src/cases.rs": {
+      "bytes": 8040,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "03c65b0d98c625443ecb0e7ade0a2997795c13396ac162e34cfb4dafa96ee42b"
+    },
+    "src/check.rs": {
+      "bytes": 11055,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "a37556625ad45b5097a729570eb67f0e008b5565dec77c99f0f48641fdf7baf8"
+    },
+    "src/ffi.rs": {
+      "bytes": 6374,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "3b54e93695589691fd16970f369ee3c3658f8adea4d3c5870a4a5dbdc849dc95"
+    },
+    "src/json.rs": {
+      "bytes": 5953,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "1bd17f2c59233f8297af1ff27d8b05e7ea18405184ff3807d11ef074c5889964"
+    },
+    "src/main.rs": {
+      "bytes": 10426,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "cf06d9d9d9a263b0716623a5765fb4dc7daa37d44a99503053494b40294efe84"
+    }
+  },
+  "manifest_self_hash": "This manifest is additionally hashed in source.sha256 before and after a run; it does not hash itself.",
+  "privacy_review": {
+    "capture_or_trace_apis": false,
+    "captured_coordinates_or_packets": false,
+    "captured_shader_binaries": false,
+    "credentials_or_secrets": false,
+    "external_input_assets": false,
+    "network_or_dispatch_code": false,
+    "new_third_party_dependencies": false,
+    "private_paths_or_workload_labels": false,
+    "project_or_emulator_code": false,
+    "vendor_shader_source": false
+  },
+  "provenance": "Newly authored public Metal API observations; documentation review retained privately. No project/emulator source, captured shader, packet or coordinate data.",
+  "purpose": "Finite synthetic native Metal line/stencil measurements and generic negative controls only. No line rasterization algorithm or emulator implementation.",
+  "qualification_scope": "Actual target-device observations only; rule UNKNOWN and implementation_qualified false even after native success.",
+  "review_state": "MAIN_REVIEWED_GENERIC_VALIDATION_SOURCE_ONLY_NOT_MODEL_QUALIFICATION",
+  "runtime_outputs": "Synthetic texture readbacks, exact input coordinates, comparisons and public device/OS/SDK metadata only; bounded explicit allowlist in review.py.",
+  "schema": "generic-native-lines-public-manifest-v1",
+  "source_bundle_excludes": [
+    ".build",
+    "target",
+    ".local-checks",
+    "out",
+    "publish",
+    "logs",
+    "executables",
+    "unrelated_files"
+  ]
+}
