@@ -1,0 +1,114 @@
+{
+  "files": {
+    ".gitignore": {
+      "bytes": 55,
+      "classification": "build_only",
+      "sha256": "495f245c9276ea77a3bccaef773be841dd6241f07afb37b3b490968cd43e2e37"
+    },
+    "Cargo.lock": {
+      "bytes": 170,
+      "classification": "build_only",
+      "sha256": "16efb9284056c73a6c440b7b88f64ca347ea74b923c18bf1109493c9b3dfabaf"
+    },
+    "Cargo.toml": {
+      "bytes": 293,
+      "classification": "build_only",
+      "sha256": "233e8179ba67ee7729e5384380730c05ac61741d937c12dccaa5bbead852332b"
+    },
+    "EXPERIMENT.json": {
+      "bytes": 5695,
+      "classification": "generic_experiment_plan",
+      "sha256": "d42d283f0574ccf0c8ab5af9254dd0336fb5e0143595082023f0960a181f5d30"
+    },
+    "build.rs": {
+      "bytes": 3570,
+      "classification": "build_only",
+      "sha256": "bf0bce1ef704b148edd3ded4412fbb71d90ac92530d4fa6112865dca4b6c18a5"
+    },
+    "native/metal_probe.h": {
+      "bytes": 1908,
+      "classification": "public_api_shim",
+      "sha256": "37fb03d895ce75e668d7a89eddb0c994e46d21f4d0cadaf14b9525189f4b345d"
+    },
+    "native/metal_probe.m": {
+      "bytes": 19299,
+      "classification": "public_api_shim",
+      "sha256": "5d7591c059b3413b321ce581ef72ab785c8f61d4bc923312683c1514c446a2f5"
+    },
+    "native/probe.metal": {
+      "bytes": 1433,
+      "classification": "authored_generic_msl",
+      "sha256": "389326b1758a4cfc474f67002b236678123bcb24e3603eddc3062d531ade51f9"
+    },
+    "review.py": {
+      "bytes": 17708,
+      "classification": "manual_review_and_bounded_local_runner",
+      "sha256": "d7d7674d7c35a382b4323dcc9ac65f7ef2582b9fa2e1cdcaebd421ad596ee3a9"
+    },
+    "run.sh": {
+      "bytes": 178,
+      "classification": "manual_review_and_bounded_local_runner",
+      "sha256": "34e7a24fb20ef9aff8a52dda785c6b4bcd5f9a0d0645f6e6c1d35e332ee0d001"
+    },
+    "src/cases.rs": {
+      "bytes": 7688,
+      "classification": "bounded_generic_inputs_checker_and_io",
+      "sha256": "0fc8df90d42d3ebeaa3e5c2909346876324e81183812f01baa0dfcb3a22c1c5e"
+    },
+    "src/check.rs": {
+      "bytes": 13096,
+      "classification": "bounded_generic_inputs_checker_and_io",
+      "sha256": "a556b76e7d57e6712f030f64eca86497800d12e8016a924425d5df2ddfc11214"
+    },
+    "src/extension.rs": {
+      "bytes": 6097,
+      "classification": "bounded_generic_inputs_checker_and_io",
+      "sha256": "d3c0fe61d145a4e4d9fc7dc25c64968bad4458e754f558394a19ffcada1faafd"
+    },
+    "src/ffi.rs": {
+      "bytes": 7244,
+      "classification": "bounded_generic_inputs_checker_and_io",
+      "sha256": "a9094a9e16854c4040848c2d659701c4ebbcff26b93480a3a443a49088001a07"
+    },
+    "src/json.rs": {
+      "bytes": 12093,
+      "classification": "bounded_generic_inputs_checker_and_io",
+      "sha256": "de27755aea96a99268f5d1258b289c152c65512e27c7f856c10b9085386c70b1"
+    },
+    "src/main.rs": {
+      "bytes": 12225,
+      "classification": "bounded_generic_inputs_checker_and_io",
+      "sha256": "23fb947152278e0b14ba6fa220b04f82c006ae2161312e8c054baa6243ca766f"
+    }
+  },
+  "manifest_self_hash": "Hashed separately in source.sha256 before and after each run; does not hash itself.",
+  "privacy_review": {
+    "capture_or_trace_apis": false,
+    "captured_coordinates_or_packets": false,
+    "captured_shader_binaries": false,
+    "credentials_or_secrets": false,
+    "external_input_assets": false,
+    "network_or_dispatch_code": false,
+    "new_third_party_dependencies": false,
+    "private_paths_or_workload_labels": false,
+    "project_or_emulator_code": false,
+    "vendor_shader_source": false,
+    "workflow_or_markdown_files": false
+  },
+  "provenance": "Public API/shim and generic shader template only. New fixed independent generic grid inputs; no private geometry or product code.",
+  "purpose": "Small standalone 16-case 256x256 large-coordinate native line/stencil supplement; no old case set retained.",
+  "qualification_scope": "Only actual samples on the recorded target device/build. Host tests and fixtures never qualify native coverage. Unsupported/no-GPU, wrong device, incomplete and failing runs are UNQUALIFIED. line_coverage_rule=UNKNOWN and implementation_qualified=false even after a qualified native measurement.",
+  "review_state": "PREPARED_FOR_MAIN_PRIVACY_REVIEW_NOT_PUBLICATION_AUTHORIZATION",
+  "reviewed_parent_manifest_sha256": "97adf83b586fb3acc6a753e8327be88c1ff3e1df7b2cc37ddc9432c989662863",
+  "runtime_outputs": "Synthetic texture readbacks, exact generic clip input bits/CPU references and public device/OS/SDK metadata; exact allowlist in review.py.",
+  "schema": "generic-native-lines-public-manifest-v1",
+  "source_bundle_excludes": [
+    "local-tools",
+    "receipts",
+    "report.txt",
+    "target",
+    "executables",
+    "logs",
+    "unrelated_files"
+  ]
+}
