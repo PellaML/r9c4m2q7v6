@@ -1,0 +1,151 @@
+{
+  "baseline_cases_preserved": 0,
+  "budgets": {
+    "automatic_retries": 0,
+    "batch_seconds": 240,
+    "build_seconds": 60,
+    "build_tree_limit_bytes_exclusive": 100663296,
+    "cargo_jobs": 1,
+    "export_cap_includes_manifest": true,
+    "export_limit_bytes_exclusive": 100663296,
+    "host_test_seconds": 60,
+    "native_process_seconds": 270,
+    "raw_bytes_per_build": 67174400,
+    "raw_limit_bytes_exclusive": 78643200,
+    "runner_jobs": 1,
+    "rust_test_threads": 1
+  },
+  "cases": [
+    {
+      "family": "query_calibration",
+      "ids": [
+        0,
+        1
+      ],
+      "purpose": "Stencil clear 0/1 with no draw; empty/full Equal(1) and independent complement."
+    },
+    {
+      "family": "positive_and_controls",
+      "ids": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "purpose": "Nonempty vertical line; exact repeat; shuffled UInt16 index offset 2 equivalence; Keep empty and inequality from positive."
+    },
+    {
+      "family": "long_horizontal",
+      "ids": [
+        6,
+        7
+      ]
+    },
+    {
+      "family": "oblique_shallow",
+      "ids": [
+        8,
+        9
+      ]
+    },
+    {
+      "family": "oblique_steep_negative",
+      "ids": [
+        10,
+        11
+      ]
+    },
+    {
+      "family": "near_horizontal",
+      "ids": [
+        12,
+        13
+      ]
+    },
+    {
+      "family": "near_vertical",
+      "ids": [
+        14,
+        15
+      ]
+    }
+  ],
+  "comparisons": {
+    "diagnostic_only": "All five endpoint reversal pairs. No expected covered pixel, line count, tie/endpoint rule, geometric prediction, or universal claim.",
+    "gating": "Completed GPU readbacks and all guards/padding; binary complementary Equal(1)/Equal(0) masks; nonzero color sentinels before and after; calibration empty/full; nonempty positive; exact repeat/indexed equality; Keep empty/inequality; both layout masks equal for each case; all 32 observations and exact raw byte count."
+  },
+  "expected_cases": 16,
+  "expected_measurements": 32,
+  "geometry_provenance": "Independently created neutral integer grid coordinates /256 around 200 pixels, all drawn segments longer than 32 pixels. Fixed inputs only; no captures, external geometry, product kernel, or old case generator.",
+  "interior_margin": "Exact rational minor-ordinate gap to an integer evaluated at major k+1/2, at least 8 major-axis pixels from either endpoint; reports closest nonzero gap and exact-tie count. Merely a diamond-tip geometric landmark, NOT a Metal rule or pixel-coverage prediction.",
+  "main_runner_policy": {
+    "exact_system_builds": [
+      "25G332",
+      "26B123"
+    ],
+    "kernel_build_source": "absolute /usr/sbin/sysctl -n kern.osversion, independently matched by native sysctlbyname",
+    "native_build_is_not_system_build": true,
+    "parallel_jobs": 2,
+    "preinstalled_xcode_recorded_not_changed": true,
+    "standard_free_labels": [
+      "macos-26",
+      "xcode-27"
+    ],
+    "system_build_source": "absolute /usr/bin/sw_vers -buildVersion; setup log also observed26B123 on macOS27.2"
+  },
+  "native_pipeline": "Template API shim and generic MSL unchanged. Nil test fragment; Always stencil compare; Replace pass except explicit Keep control; front/back refs=1; full completion handler and status/error checks before shared-memory access.",
+  "outputs": [
+    "diagnostics.jsonl",
+    "generator.json",
+    "inputs.json",
+    "observations.jsonl",
+    "readbacks.bin",
+    "run.json",
+    "summary.json"
+  ],
+  "planned_margins": {
+    "long_horizontal": "1/256",
+    "near_horizontal": "1/65536",
+    "near_vertical": "1/65536",
+    "oblique_shallow": "13/479872",
+    "oblique_steep_negative": "37/1907072"
+  },
+  "position_mode": "All cases use direct clip identity, z=0.5,w=1. Window grid /256 maps exactly to clip multiples of 1/32768. Exact storage and consumed clip bits plus CPU f64 viewport references are recorded; no native vertex readback is claimed.",
+  "public_file_policy": "Only the exact hashed source allowlist; no README or markdown, workflow, private paths/data, secrets, binaries, logs, or local receipts.",
+  "qualification_scope": "Only actual samples on the recorded target device/build. Host tests and fixtures never qualify native coverage. Unsupported/no-GPU, wrong device, incomplete and failing runs are UNQUALIFIED. line_coverage_rule=UNKNOWN and implementation_qualified=false even after a qualified native measurement.",
+  "review_commands": [
+    "python3 review.py verify-sources",
+    "cargo test --release --offline --locked --jobs 1 -- --test-threads=1",
+    "VALIDATION_REVIEWED=1 bash run.sh NEW_OUTPUT_DIRECTORY",
+    "python3 review.py export OUTPUT_DIRECTORY NEW_BOUNDED_DIRECTORY"
+  ],
+  "runner_policy": {
+    "exact_system_builds": [
+      "25G332",
+      "26B123"
+    ],
+    "kernel_build_source": "absolute /usr/sbin/sysctl -n kern.osversion, independently matched by native sysctlbyname",
+    "native_build_is_not_system_build": true,
+    "parallel_jobs": 2,
+    "preinstalled_xcode_recorded_not_changed": true,
+    "standard_free_labels": [
+      "macos-26",
+      "xcode-27"
+    ],
+    "system_build_source": "absolute /usr/bin/sw_vers -buildVersion; setup log also observed26B123 on macOS27.2"
+  },
+  "schema": "generic-native-large-lines-plan-v1",
+  "state": "PREPARED_FOR_MAIN_PRIVACY_REVIEW_NOT_PUBLICATION_AUTHORIZATION",
+  "target": {
+    "height": 256,
+    "mode_0_slabs": 6,
+    "mode_1_slabs": 2,
+    "prefix_guard_bytes": 256,
+    "raw_bytes_per_case_both_layouts": 4198400,
+    "row_pitch_bytes": 2048,
+    "samples": 1,
+    "slab_bytes": 524800,
+    "suffix_guard_bytes": 256,
+    "width": 256
+  }
+}

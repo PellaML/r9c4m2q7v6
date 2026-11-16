@@ -1,0 +1,6 @@
+/target/
+/out/
+/publish/
+/.local-checks/
+__pycache__/
+
