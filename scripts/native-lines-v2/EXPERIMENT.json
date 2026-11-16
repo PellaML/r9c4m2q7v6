@@ -1,0 +1,122 @@
+{
+  "baseline_cases_preserved": 66,
+  "budgets": {
+    "batch_seconds": 240,
+    "build_tree_limit_bytes_exclusive": 100663296,
+    "cargo_jobs": 1,
+    "export_limit_bytes_exclusive": 100663296,
+    "native_process_seconds": 270,
+    "raw_bytes_per_build": 66985984,
+    "raw_limit_bytes_exclusive": 78643200,
+    "runner_matrix_max_parallel": 2,
+    "rust_test_threads": 1
+  },
+  "comparisons": {
+    "diagnostic_only": "All general reversal, neighbor/phase, viewport/projection and rounded analytic preclip comparisons. No expected raster equality, count, endpoint ownership or quantization law.",
+    "gating": "All reviewed baseline checks; complete native receipts/guards/complement/color preservation; both attachment layouts; exact identical-input repeats; direct/indexed equivalents; four exactly representable dyadic window/direct-clip controls; direct-clip Keep empty and wrong equality rejected."
+  },
+  "coordinate_inputs": "Deterministically authored synthetic binary32 values only. No external geometry/input file, private coordinates, packets, libraries or raster kernel.",
+  "expected_cases": 962,
+  "expected_measurements": 1924,
+  "families": [
+    {
+      "count": 168,
+      "family": "axis_threshold_neighbors"
+    },
+    {
+      "count": 66,
+      "family": "baseline_66"
+    },
+    {
+      "count": 32,
+      "family": "binary32_mantissa_direct_clip"
+    },
+    {
+      "count": 32,
+      "family": "binary32_mantissa_window"
+    },
+    {
+      "count": 4,
+      "family": "direct_clip_exact_control"
+    },
+    {
+      "count": 1,
+      "family": "direct_clip_keep_control"
+    },
+    {
+      "count": 48,
+      "family": "direct_clip_ulp_neighbors"
+    },
+    {
+      "count": 136,
+      "family": "independent_endpoint_neighbors"
+    },
+    {
+      "count": 128,
+      "family": "independent_fraction_phases"
+    },
+    {
+      "count": 4,
+      "family": "indexed_precision_control"
+    },
+    {
+      "count": 96,
+      "family": "near_axis_tiny_minor"
+    },
+    {
+      "count": 16,
+      "family": "oblique_nonpower_clip"
+    },
+    {
+      "count": 8,
+      "family": "preclip_direct_reference"
+    },
+    {
+      "count": 48,
+      "family": "projection_direct_reference"
+    },
+    {
+      "count": 36,
+      "family": "projection_window_repeat"
+    },
+    {
+      "count": 15,
+      "family": "public_inset_clip_repeats"
+    },
+    {
+      "count": 4,
+      "family": "repeatability_control"
+    },
+    {
+      "count": 96,
+      "family": "short_axis_and_degenerate"
+    },
+    {
+      "count": 24,
+      "family": "short_oblique"
+    }
+  ],
+  "outputs": {
+    "diagnostics.jsonl": "Actual native mask differences and XOR rows by case pair; UNOBSERVED when either valid readback is missing. CPU-reference bit comparison is separately labeled non-native.",
+    "generator.json": "Family IDs, deterministic recipes/seed, budget and comparison plan.",
+    "inputs.json": "Exact input binary32 bits plus explicitly labeled CPU staged projection references or direct clip input bits.",
+    "unchanged_native_payload": "Both layouts retain every raw guarded shared-buffer byte, complementary query masks, color-before/after planes and command completion/error receipts."
+  },
+  "position_modes": {
+    "0": "Existing reviewed nominal-window MSL expression, unchanged. Rust records staged binary32 arithmetic as a CPU reference, never native vertex readback.",
+    "1": "New tiny vertex entry loads direct clip xy binary32 values with z=0.5,w=1. No window arithmetic or instance offsets. Input identity expression is not instrumented vertex readback."
+  },
+  "projection_interpretation": "Do not equate nominal window coordinates with actual hardware postprojection positions. CPU reference clip bits may differ from GPU evaluation/contraction despite fastMathEnabled=NO. Direct-clip companions and differing viewport dimensions are non-gating measurements of that distinction.",
+  "public_file_policy": "No README or markdown files; exact source and output allowlists only.",
+  "qualification_scope": "Finite native observations only; line_coverage_rule remains UNKNOWN and implementation_qualified remains false. No-GPU/unsupported/wrong-device/incomplete/failing run is UNQUALIFIED, never a skip/pass.",
+  "remote_actions": "This source is separately reviewed by Main. Only the generic allowlist is eligible for the authorized public validation repository.",
+  "review_commands": [
+    "python3 review.py verify-sources",
+    "cargo test --release --offline --locked --jobs 1 -- --test-threads=1",
+    "VALIDATION_REVIEWED=1 bash run.sh NEW_OUTPUT_DIRECTORY",
+    "python3 review.py export OUTPUT_DIRECTORY NEW_BOUNDED_DIRECTORY"
+  ],
+  "schema": "generic-native-lines-extension-plan-v2",
+  "state": "PREPARED_FOR_MAIN_PRIVACY_REVIEW_NOT_PUBLICATION_AUTHORIZATION",
+  "viewports": "32x32 default; 28x24 inset and transpose; 16x16 inset clipping; independently chosen 384x192 and 512x512 overspill with only a 32x32 attachment/scissor."
+}

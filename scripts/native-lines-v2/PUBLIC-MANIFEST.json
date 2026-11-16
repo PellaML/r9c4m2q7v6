@@ -1,0 +1,119 @@
+{
+  "files": {
+    ".gitignore": {
+      "bytes": 55,
+      "classification": "build_only",
+      "sha256": "495f245c9276ea77a3bccaef773be841dd6241f07afb37b3b490968cd43e2e37"
+    },
+    "Cargo.lock": {
+      "bytes": 164,
+      "classification": "build_only",
+      "sha256": "05d0cbc4eca9b57144791117e115183347de529b2d66e7d2aed34854ac4b6e8d"
+    },
+    "Cargo.toml": {
+      "bytes": 287,
+      "classification": "build_only",
+      "sha256": "36c94af5119f5d1d71047d733398e79de58b307055584f5ac63b96a114f7f064"
+    },
+    "EXPERIMENT.json": {
+      "bytes": 4971,
+      "classification": "generated_experiment_plan",
+      "sha256": "de08731086de8d66fe15bf14823871b852e19af2b31ca6bcd5d025d6b0fd7913"
+    },
+    "build.rs": {
+      "bytes": 3570,
+      "classification": "build_only",
+      "sha256": "bf0bce1ef704b148edd3ded4412fbb71d90ac92530d4fa6112865dca4b6c18a5"
+    },
+    "native-lines.workflow.yml.template": {
+      "bytes": 3353,
+      "classification": "manual_review_and_bounded_runner",
+      "sha256": "300e30f83eb712b9871c033621308ff986b5ba7a2c45935902be70138e1fb73b"
+    },
+    "native/metal_probe.h": {
+      "bytes": 1676,
+      "classification": "public_api_shim",
+      "sha256": "d63759e3915654563d9d87c1b87862ebcd9a956cc053e2f789b5d8170a319246"
+    },
+    "native/metal_probe.m": {
+      "bytes": 19299,
+      "classification": "public_api_shim",
+      "sha256": "5d7591c059b3413b321ce581ef72ab785c8f61d4bc923312683c1514c446a2f5"
+    },
+    "native/probe.metal": {
+      "bytes": 1433,
+      "classification": "authored_generic_msl",
+      "sha256": "389326b1758a4cfc474f67002b236678123bcb24e3603eddc3062d531ade51f9"
+    },
+    "review.py": {
+      "bytes": 13166,
+      "classification": "manual_review_and_bounded_runner",
+      "sha256": "bf80b85175d1a5c18254f3248d6a300704c317f3011c4d516249e87bd429eafb"
+    },
+    "run.sh": {
+      "bytes": 178,
+      "classification": "manual_review_and_bounded_runner",
+      "sha256": "34e7a24fb20ef9aff8a52dda785c6b4bcd5f9a0d0645f6e6c1d35e332ee0d001"
+    },
+    "src/cases.rs": {
+      "bytes": 8251,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "da383af7dbee1abac349e9643eceeecdaebf94ddc2de22450d9b41276922451e"
+    },
+    "src/check.rs": {
+      "bytes": 12760,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "fd230455f9bf4527353486129d2992bf6dfd7e113927102cc143e8864c9e96ee"
+    },
+    "src/extension.rs": {
+      "bytes": 24393,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "29cdadebec41ab80c8b40cf646de6d55c6f2f0f4f457c8e52a7e845f0c3a9f80"
+    },
+    "src/ffi.rs": {
+      "bytes": 6684,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "72362562d4af47d9d84b1adc82565286d14910c5983ba3c3ed1d68f6d1e9e922"
+    },
+    "src/json.rs": {
+      "bytes": 11324,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "5d63b96fc04e3efcc66353a5f49fb199fc1c2f6d9155e174f79ff4947eae3862"
+    },
+    "src/main.rs": {
+      "bytes": 11669,
+      "classification": "rust_bounded_inputs_checker_and_io",
+      "sha256": "b7e8bda9b44b99f39e3a3e7d8c901a83a3fbe9beb6a841f2b949908289ea4fa5"
+    }
+  },
+  "manifest_self_hash": "This manifest is additionally hashed in source.sha256 before and after a run; it does not hash itself.",
+  "privacy_review": {
+    "capture_or_trace_apis": false,
+    "captured_coordinates_or_packets": false,
+    "captured_shader_binaries": false,
+    "credentials_or_secrets": false,
+    "external_input_assets": false,
+    "network_or_dispatch_code": false,
+    "new_third_party_dependencies": false,
+    "private_paths_or_workload_labels": false,
+    "project_or_emulator_code": false,
+    "vendor_shader_source": false
+  },
+  "provenance": "Create-only extension of reviewed generic public source. New values generated from fixed arithmetic/bit recipes only; no private geometry, code or kernel copied.",
+  "purpose": "Bounded synthetic binary32 line precision/projection measurements with both layouts; original 66 inputs/checks retained. No raster model or universal quantization assertion.",
+  "qualification_scope": "Actual target-device observations only; rule UNKNOWN and implementation_qualified false even after native success.",
+  "review_state": "PREPARED_FOR_MAIN_PRIVACY_REVIEW_NOT_PUBLICATION_AUTHORIZATION",
+  "reviewed_parent_manifest_sha256": "4fe6fa24efeed799f0cd59937f2aa8b1dc1706a9ed577d9ae44a8ff0723bed4f",
+  "runtime_outputs": "Synthetic texture readbacks, exact input coordinates, comparisons and public device/OS/SDK metadata only; bounded explicit allowlist in review.py.",
+  "schema": "generic-native-lines-public-manifest-v1",
+  "source_bundle_excludes": [
+    ".build",
+    "target",
+    ".local-checks",
+    "out",
+    "publish",
+    "logs",
+    "executables",
+    "unrelated_files"
+  ]
+}
