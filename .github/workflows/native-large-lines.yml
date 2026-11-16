@@ -1,0 +1,87 @@
+# Generic validation only; manually dispatched exact reviewed commit.
+name: Bounded native large-coordinate observations
+run-name: Large-coordinate observations ${{ inputs.reviewed_commit }}
+on:
+  workflow_dispatch:
+    inputs:
+      main_reviewed:
+        description: Exact generic validation files and commit reviewed
+        type: boolean
+        required: true
+        default: false
+      free_runners_confirmed:
+        description: Standard public runner eligibility reviewed
+        type: boolean
+        required: true
+        default: false
+      reviewed_commit:
+        description: Full reviewed commit equal to the run commit
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: bounded-native-large-lines-v3
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' && inputs.main_reviewed == true && inputs.free_runners_confirmed == true && inputs.reviewed_commit == github.sha && github.repository == 'PellaML/r9c4m2q7v6' && github.event.repository.private == false && github.ref == 'refs/heads/research/probe' && github.run_attempt == '1'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - label: macos-26
+            build: 25G332
+          - label: xcode-27
+            build: 26A434
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.reviewed_commit }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Finite native line batch
+        id: observe
+        timeout-minutes: 7
+        env:
+          EXPECTED_BUILD: ${{ matrix.build }}
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+          VALIDATION_REVIEWED: '1'
+          CARGO_BUILD_JOBS: '1'
+          RUST_TEST_THREADS: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          [[ "$(sw_vers -buildVersion)" == "$EXPECTED_BUILD" ]]
+          [[ "$(git rev-parse HEAD)" == "$REVIEWED_COMMIT" && "$GITHUB_SHA" == "$REVIEWED_COMMIT" ]]
+          [[ ! -e out-native-large-lines-v3 && ! -L out-native-large-lines-v3 ]]
+          echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          if bash scripts/native-large-lines/run.sh out-native-large-lines-v3; then
+            true
+          else
+            code=$?
+            for file in out-native-large-lines-v3/.build/*.log; do
+              [[ -f "$file" ]] || continue
+              tail -n 80 "$file" | sed "s|$GITHUB_WORKSPACE|/validation|g"
+            done
+            exit "$code"
+          fi
+      - name: Bound generic results only
+        id: bounds
+        if: ${{ always() && steps.observe.outputs.fresh == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/native-large-lines/review.py export out-native-large-lines-v3 publish-native-large-lines-v3
+          echo 'bounded=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() && steps.bounds.outputs.bounded == 'true' }}
+        with:
+          name: native-large-lines-${{ matrix.label }}-${{ matrix.build }}
+          retention-days: 3
+          if-no-files-found: error
+          path: publish-native-large-lines-v3/
