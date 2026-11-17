@@ -28,7 +28,7 @@ for ds in 0..<2 {
         else if x<anchors.count{r=anchors[x]}
         else if x<64 && y<255{
             let code=y+(x*17)%(256-y)
-            let s=Float((Double(code)+0.5-Double(y))/Double(255-y))
+            let s=Float((Double(code)+0.5-Double(y))/255.0)
             r=x%3==0 ? s.nextDown : (x%3==1 ? s : s.nextUp)
         } else {let f=Float(next()>>8)/16777216;r=x<224 ? f : f*4-1.5}
         let g=Float((x*31+y*7+3)&255)/255,b=Float((x*11+y*47+101)&255)/255
@@ -42,14 +42,10 @@ for k in [0,1,7,63,127,128,191,254]{let v=(Double(k)+0.5)/255;clearValues += [v.
 struct Texture {let t:MTLTexture;let parent:MTLBuffer?;let pitch:Int;let offset:Int;let length:Int}
 struct Profile {let name:String;let rgb:MTLBlendFactor;let da:MTLBlendFactor;let sa:MTLBlendFactor;let mask:MTLColorWriteMask;let enabled:Bool;let flip:UInt32;let repeats:Int}
 let profiles:[Profile]=[
-    Profile(name:"replace",rgb:.zero,da:.zero,sa:.one,mask:.all,enabled:false,flip:0,repeats:1),
-    Profile(name:"union",rgb:.oneMinusSourceColor,da:.zero,sa:.zero,mask:.all,enabled:true,flip:0,repeats:1),
-    Profile(name:"over-alpha",rgb:.oneMinusSourceAlpha,da:.zero,sa:.zero,mask:.all,enabled:true,flip:0,repeats:1),
-    Profile(name:"union-alpha-control",rgb:.oneMinusSourceColor,da:.oneMinusSourceAlpha,sa:.zero,mask:.all,enabled:true,flip:0,repeats:1),
-    Profile(name:"union-red-mask",rgb:.oneMinusSourceColor,da:.zero,sa:.zero,mask:.red,enabled:true,flip:0,repeats:1),
-    Profile(name:"union-no-red",rgb:.oneMinusSourceColor,da:.zero,sa:.zero,mask:[.green,.blue,.alpha],enabled:true,flip:0,repeats:1),
-    Profile(name:"union-flip-alpha",rgb:.oneMinusSourceColor,da:.zero,sa:.zero,mask:.all,enabled:true,flip:1,repeats:1),
-    Profile(name:"union-repeat",rgb:.oneMinusSourceColor,da:.zero,sa:.zero,mask:.all,enabled:true,flip:0,repeats:4)
+    Profile(name:"add",rgb:.one,da:.zero,sa:.zero,mask:.all,enabled:true,flip:0,repeats:1),
+    Profile(name:"add-repeat",rgb:.one,da:.zero,sa:.zero,mask:.all,enabled:true,flip:0,repeats:4),
+    Profile(name:"add-red-mask",rgb:.one,da:.zero,sa:.zero,mask:.red,enabled:true,flip:0,repeats:1),
+    Profile(name:"add-no-red",rgb:.one,da:.zero,sa:.zero,mask:[.green,.blue,.alpha],enabled:true,flip:0,repeats:1)
 ]
 func run()throws->[String:Any]{
     try need(CommandLine.arguments.count==3,"probe.metal outdir")
@@ -123,7 +119,7 @@ func run()throws->[String:Any]{
         return (Data(bytes:fb.contents(),count:n*16),Data(bytes:hb.contents(),count:n*8))
     }
     var observations:[[String:Any]]=[],clears:[[String:Any]]=[],blends:[[String:Any]]=[],errors:[[String:Any]]=[]
-    for variant in ["standalone-shared","standalone-private","buffer-shared","buffer-private"]{
+    for variant in ["standalone-shared","buffer-shared"]{
         let a:Texture
         do{a=try make(variant,16,16,smallSeed)}catch{errors.append(["variant":variant,"section":"identity","error":"\(error)"]);continue}
         var obs:[String:Any]=["variant":variant,"pixelFormat":a.t.pixelFormat.rawValue,"usage":a.t.usage.rawValue,"storage":a.t.storageMode.rawValue,"bufferView":a.t.buffer != nil,"pitch":a.pitch,"offset":a.offset,"parentLength":a.length]

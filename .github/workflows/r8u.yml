@@ -1,11 +1,11 @@
-name: Generic scalar UNORM observation
-run-name: Scalar UNORM storage sampling blending
+name: Generic scalar UNORM additive observation
+run-name: Scalar UNORM additive storage controls
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: generic-r8u-observation
+  group: generic-r8u-add-observation
   cancel-in-progress: false
 jobs:
   r8u:

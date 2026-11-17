@@ -2,6 +2,7 @@
 set -uo pipefail
 out="$1"; mkdir -p "$out/results"
 here="$(cd "$(dirname "$0")" && pwd)"
+(cd "$here" && shasum -a 256 probe.swift probe.metal run.sh) > "$out/results/source-sha256.txt" || exit 4
 {
   echo "{"
   echo "\"sw_vers\": \"$(sw_vers -productVersion) $(sw_vers -buildVersion)\","
